@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CS Galaxy — Learning Map</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- OrbitControls via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+</head>
+<body>
+
+  <!-- HUD Top Bar -->
+  <header id="hud">
+    <div id="hud-left">
+      <span id="logo">⬤ CS Galaxy</span>
+    </div>
+    <div id="hud-center" style="position:relative;">
+      <input type="text" id="search-input" placeholder="Search topics, subjects, concepts…" autocomplete="off" />
+      <div id="search-results"></div>
+    </div>
+    <div id="hud-right">
+      <label class="toggle-pill" title="Toggle orbit paths">
+        <input type="checkbox" id="toggle-orbits" checked />
+        <span>Orbits</span>
+      </label>
+      <label class="toggle-pill" title="Toggle trails">
+        <input type="checkbox" id="toggle-trails" checked />
+        <span>Trails</span>
+      </label>
+      <label class="toggle-pill" title="Toggle ambient sound">
+        <input type="checkbox" id="toggle-audio" />
+        <span>Sound</span>
+      </label>
+      <div id="view-toggle">
+        <button id="view-galaxy-btn" class="view-toggle-btn active" type="button">Galaxy</button>
+        <button id="view-tree-btn" class="view-toggle-btn" type="button">Tree</button>
+      </div>
+      <div id="speed-control">
+        <span>Speed</span>
+        <input type="range" id="speed-slider" min="0" max="5" step="0.1" value="1" />
+        <span id="speed-val">0.1×</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Canvas -->
+  <canvas id="galaxy-canvas"></canvas>
+
+  <!-- Side Panel -->
+  <aside id="side-panel" class="panel-closed">
+    <button id="panel-close" aria-label="Close panel">✕</button>
+    <div id="panel-content">
+      <div id="panel-header">
+        <div id="panel-icon"></div>
+        <div>
+          <h2 id="panel-title">—</h2>
+          <p id="panel-type"></p>
+        </div>
+      </div>
+      <div id="panel-progress-wrap">
+        <div id="panel-progress-bar"><div id="panel-progress-fill"></div></div>
+        <span id="panel-progress-label">0%</span>
+      </div>
+      <div id="panel-body"></div>
+    </div>
+  </aside>
+
+  <!-- Tooltip -->
+  <div id="tooltip" aria-hidden="true"></div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay">
+    <div id="loading-inner">
+      <div id="loading-spinner"></div>
+      <p id="loading-text">Initializing galaxy…</p>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div id="legend">
+    <div class="legend-item"><span class="legend-dot" style="background:#fff;box-shadow:0 0 8px #fff"></span>Concept/Asteroid</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#b0c4ff;box-shadow:0 0 8px #b0c4ff"></span>Subtopic/Moon</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#7ec8e3;box-shadow:0 0 12px #7ec8e3"></span>Chapter/Planet</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#ffd700;box-shadow:0 0 14px #ffd700"></span>Subject/Sun</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#ff6a00;box-shadow:0 0 18px #ff6a00"></span>Domain/Supercluster</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#000;box-shadow:0 0 24px #9b59b6,0 0 48px #6c3483"></span>CS Core/Black Hole</div>
+    <div class="legend-item"><span class="legend-dot completed-dot"></span>Completed</div>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>
