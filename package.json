@@ -1,5 +1,8 @@
 {
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.3"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-fs": "^2.5.1"
   }
 }

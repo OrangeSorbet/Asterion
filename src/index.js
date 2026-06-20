@@ -4,6 +4,54 @@
    ═══════════════════════════════════════════════════════════════ */
 
 'use strict';
+const { readTextFile, writeTextFile } = window.__TAURI__.fs;
+
+let _jsonFilePath = null;
+let _jsonData = null;
+
+async function resolveJsonPath() {
+  _jsonFilePath = await window.__TAURI__.core.invoke('theory_json_path');
+}
+
+async function saveJsonData() {
+  if (!_jsonFilePath || !_jsonData) return;
+  await writeTextFile(_jsonFilePath, JSON.stringify(_jsonData, null, 2));
+}
+
+function ensureRefsAndDesc(obj) {
+  if (!obj.references) obj.references = [];
+  if (obj.description === undefined) obj.description = '';
+  return obj;
+}
+
+function findJsonNode(userData) {
+  if (!_jsonData) return null;
+  if (!userData) return null;
+  const { type, domain, subject, chapter, label } = userData;
+  if (type === 'root') return _jsonData;
+  const dom = _jsonData.domains.find(d => d.domain === domain);
+  if (!dom) return null;
+  if (type === 'domain') return ensureRefsAndDesc(dom);
+  const subj = dom.subjects.find(s => s.name === subject);
+  if (!subj) return null;
+  if (type === 'subject') return ensureRefsAndDesc(subj);
+  const chap = subj.chapters.find(c => c.chapter === chapter);
+  if (!chap) return null;
+  if (type === 'chapter') return ensureRefsAndDesc(chap);
+  const topics = chap.topics || chap.subtopics || [];
+  const topic = topics.find(t => t.name === (type === 'subtopic' ? label : userData.subtopic));
+  if (!topic) return null;
+  if (type === 'subtopic') return ensureRefsAndDesc(topic);
+  const concepts = topic.concepts || [];
+  const con = concepts.find(c => (typeof c === 'object' ? c.name : c) === label);
+  if (typeof con === 'string') {
+    const idx = concepts.indexOf(con);
+    concepts[idx] = { name: con, description: '', references: [] };
+    return concepts[idx];
+  }
+  if (!con) return null;
+  return ensureRefsAndDesc(con);
+}
 
 // ─── UNIVERSAL TWEAK CONFIG ─────────────────────────────────────
 const CONFIG = {
@@ -866,7 +914,7 @@ function buildGalaxy(data) {
   jsonData = data;
   buildBlackHole();
 
-  const domains = data.domains || [];
+  const domains = data.domains || (data.domain ? [data] : []);
   const domainCount = domains.length;
 
   domains.forEach((domain, di) => {
@@ -887,7 +935,7 @@ function buildGalaxy(data) {
     });
     const dMesh = new THREE.Mesh(dGeo, dMat);
     scene.add(dMesh);
-    registerNode(dMesh, idFor('domain', domain.domain), domain.domain, 'domain', 1, { domain: domain.domain });
+    registerNode(dMesh, idFor('domain', domain.domain), domain.domain, 'domain', 1, { domain: domain.domain, description: domain.description, references: domain.references });
     addSunLight(dMesh, dColorHex);
 
     // Domain point light
@@ -930,7 +978,7 @@ function buildGalaxy(data) {
       const sMesh = new THREE.Mesh(sGeo, sMat);
       scene.add(sMesh);
       registerNode(sMesh, idFor('subj', domain.domain, subj.name), subj.name, 'subject', 2, {
-        domain: domain.domain, difficulty: subj.difficulty, type: subj.type
+        domain: domain.domain, difficulty: subj.difficulty, type: subj.type, description: subj.description, references: subj.references
       });
       addSunLight(sMesh, sColorHex);
       const sLight = new THREE.PointLight(sColorHex, 1.5, 100);
@@ -972,7 +1020,7 @@ function buildGalaxy(data) {
         const cMesh = new THREE.Mesh(cGeo, cMat);
         scene.add(cMesh);
         registerNode(cMesh, idFor('chap', domain.domain, subj.name, chap.chapter), chap.chapter, 'chapter', 3, {
-          domain: domain.domain, subject: subj.name
+          domain: domain.domain, subject: subj.name, description: chap.description, references: chap.references
         });
 
         const cOrbitLine = makeOrbitLine(cRadius, cIncl, 0x3a5a7a, 0.15);
@@ -989,7 +1037,7 @@ function buildGalaxy(data) {
         trails.push({ trail: cTrail, mesh: cMesh });
 
         // Subtopics = moons around planets
-        const subtopics = chap.subtopics || [];
+        const subtopics = chap.topics || chap.subtopics || [];
         subtopics.forEach((sub, sti) => {
           domainSeed++;
           const stRadius = CONFIG.subtopicRadiusBase + sti * CONFIG.subtopicRadiusStep;
@@ -1005,7 +1053,7 @@ function buildGalaxy(data) {
           scene.add(stMesh);
           registerNode(stMesh, idFor('sub', domain.domain, subj.name, chap.chapter, sub.name), sub.name, 'subtopic', 4, {
             domain: domain.domain, subject: subj.name, chapter: chap.chapter,
-            concepts: sub.concepts || []
+            concepts: sub.concepts || [], description: sub.description, references: sub.references
           });
 
           const stOrbitLine = makeOrbitLine(stRadius, stIncl, 0x2a3a5a, 0.12);
@@ -1036,8 +1084,12 @@ function buildGalaxy(data) {
             });
             const conMesh = new THREE.Mesh(conGeo, conMat);
             conMesh.visible = false;
-            registerNode(conMesh, idFor('con', domain.domain, subj.name, chap.chapter, sub.name, con), con, 'concept', 5, {
-              domain: domain.domain, subject: subj.name, chapter: chap.chapter, subtopic: sub.name
+            const conObj = (typeof con === 'object' && con !== null);
+            const conName2 = conObj ? con.name : con;
+            const conDesc = conObj ? con.description : undefined;
+            const conRefs = conObj ? con.references : undefined;
+            registerNode(conMesh, idFor('con', domain.domain, subj.name, chap.chapter, sub.name, conName2), conName2, 'concept', 5, {
+              domain: domain.domain, subject: subj.name, chapter: chap.chapter, subtopic: sub.name, description: conDesc, references: conRefs
             });
             orbits.push({
               mesh: conMesh, radius: conRadius, parentMesh: stMesh,
@@ -1202,6 +1254,237 @@ function renderIconForMesh(mesh) {
   }
 }
 
+function makeKebabMenu(items) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;display:inline-block;';
+  const btn = document.createElement('button');
+  btn.textContent = '⋮';
+  btn.style.cssText = 'background:none;border:none;color:#6a7a9a;cursor:pointer;font-size:1rem;padding:0 4px;line-height:1;';
+  const menu = document.createElement('div');
+  menu.style.cssText = 'display:none;position:absolute;right:0;top:100%;background:#0d1030;border:1px solid #2a3460;border-radius:6px;z-index:999;min-width:100px;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+  items.forEach(({ label, action, danger }) => {
+    const item = document.createElement('div');
+    item.textContent = label;
+    item.style.cssText = `padding:8px 14px;cursor:pointer;font-size:0.78rem;color:${danger ? '#ff6060' : '#cfd8ff'};white-space:nowrap;`;
+    item.addEventListener('mouseenter', () => item.style.background = 'rgba(255,255,255,0.06)');
+    item.addEventListener('mouseleave', () => item.style.background = '');
+    item.addEventListener('click', (e) => { e.stopPropagation(); menu.style.display = 'none'; action(); });
+    menu.appendChild(item);
+  });
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = menu.style.display === 'block';
+    document.querySelectorAll('.kebab-menu-open').forEach(m => { m.style.display = 'none'; m.classList.remove('kebab-menu-open'); });
+    menu.style.display = isOpen ? 'none' : 'block';
+    if (!isOpen) menu.classList.add('kebab-menu-open');
+  });
+  document.addEventListener('click', () => { menu.style.display = 'none'; }, { once: false });
+  wrap.appendChild(btn);
+  wrap.appendChild(menu);
+  return wrap;
+}
+
+function renderDescriptionSection(body, d, jsonNode) {
+  const sec = document.createElement('div');
+  sec.className = 'panel-section';
+  sec.dataset.descSection = '1';
+  if (!jsonNode) {
+    sec.innerHTML = '<p style="font-size:0.75rem;color:#c06060;">Could not match this node to theory.json (name mismatch) — editing disabled.</p>';
+    body.appendChild(sec);
+    return;
+  }
+
+  function rebuild() {
+    sec.innerHTML = '';
+    if (jsonNode && jsonNode.description) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;margin-bottom:4px;';
+      const sectionTitle = document.createElement('div');
+      sectionTitle.style.cssText = 'font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:#6a7a9a;font-weight:600;flex:1;padding-top:2px;';
+      sectionTitle.textContent = 'Description';
+      const kebab = makeKebabMenu([
+        { label: 'Edit', action: () => showDescEdit() },
+        { label: 'Delete', danger: true, action: () => {
+          jsonNode.description = '';
+          d.description = '';
+          saveJsonData();
+          rebuild();
+        }}
+      ]);
+      row.appendChild(sectionTitle);
+      row.appendChild(kebab);
+      sec.appendChild(row);
+      const p = document.createElement('p');
+      p.style.cssText = 'font-size:0.8rem;color:#a0afc0;line-height:1.5;margin:0;';
+      p.textContent = jsonNode.description;
+      sec.appendChild(p);
+    }
+
+    function showDescEdit(existing) {
+      sec.innerHTML = '';
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:#6a7a9a;font-weight:600;margin-bottom:6px;';
+      label.textContent = 'Description';
+      const ta = document.createElement('textarea');
+      ta.value = existing || (jsonNode ? jsonNode.description : '') || '';
+      ta.style.cssText = 'width:100%;min-height:80px;background:#0a0d25;border:1px solid #2a3460;border-radius:6px;color:#cfd8ff;font-size:0.8rem;padding:8px;resize:vertical;font-family:inherit;box-sizing:border-box;';
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:8px;margin-top:6px;';
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save';
+      saveBtn.style.cssText = 'background:#4f8cff;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:0.78rem;';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = 'background:rgba(255,255,255,0.06);color:#cfd8ff;border:1px solid #2a3460;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:0.78rem;';
+      saveBtn.addEventListener('click', () => {
+        const val = ta.value.trim();
+        if (jsonNode) { jsonNode.description = val; d.description = val; }
+        saveJsonData();
+        rebuild();
+      });
+      cancelBtn.addEventListener('click', () => rebuild());
+      btnRow.appendChild(saveBtn);
+      btnRow.appendChild(cancelBtn);
+      sec.appendChild(label);
+      sec.appendChild(ta);
+      sec.appendChild(btnRow);
+    }
+
+    if (!jsonNode?.description) {
+      const addBtn = document.createElement('button');
+      addBtn.textContent = '+ Add description';
+      addBtn.style.cssText = 'background:none;border:1px dashed #2a3460;color:#6a7a9a;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.75rem;margin-top:2px;';
+      addBtn.addEventListener('click', () => showDescEdit());
+      sec.appendChild(addBtn);
+    }
+  }
+
+  rebuild();
+  body.appendChild(sec);
+}
+
+function renderReferencesSection(body, d, jsonNode) {
+  const sec = document.createElement('div');
+  sec.className = 'panel-section';
+  if (!jsonNode) { return; }
+
+  const REF_TYPES = ['Book', 'Video', 'Article', 'Website', 'Certification', 'Course', 'Paper', 'Documentation', 'Tool', 'Repo'];
+
+  function rebuild() {
+    sec.innerHTML = '';
+    const refs = (jsonNode && jsonNode.references) ? jsonNode.references : [];
+
+    if (refs.length) {
+      const titleRow = document.createElement('div');
+      titleRow.style.cssText = 'font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:#6a7a9a;font-weight:600;margin-bottom:6px;';
+      titleRow.textContent = 'References';
+      sec.appendChild(titleRow);
+
+      refs.forEach((ref, idx) => {
+        const refObj = typeof ref === 'object' ? ref : { title: ref, url: ref, type: 'Website' };
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px;';
+        const a = document.createElement('a');
+        a.removeAttribute?.('href');
+        a.dataset.url = refObj.url || '';
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          let url = a.dataset.url;
+          if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+          if (url) window.__TAURI__.shell.open(url);
+          return false;
+        });
+        a.style.cssText = 'flex:1;font-size:0.78rem;color:#4f8cff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;';
+        a.textContent = refObj.title || refObj.url || '—';
+        const typeBadge = document.createElement('span');
+        typeBadge.textContent = refObj.type || '';
+        typeBadge.style.cssText = 'font-size:0.65rem;color:#6a7a9a;background:rgba(255,255,255,0.05);border-radius:4px;padding:2px 5px;white-space:nowrap;';
+        const kebab = makeKebabMenu([
+          { label: 'Edit', action: () => showRefForm(idx, refObj) },
+          { label: 'Delete', danger: true, action: () => {
+            jsonNode.references.splice(idx, 1);
+            d.references = jsonNode.references;
+            saveJsonData();
+            rebuild();
+          }}
+        ]);
+        row.appendChild(a);
+        row.appendChild(typeBadge);
+        row.appendChild(kebab);
+        sec.appendChild(row);
+      });
+    }
+
+    function showRefForm(editIdx, existing) {
+      const form = document.createElement('div');
+      form.style.cssText = 'background:#0a0d25;border:1px solid #2a3460;border-radius:8px;padding:10px;margin-top:6px;';
+      const fields = [
+        { key: 'title', placeholder: 'Display name' },
+        { key: 'url', placeholder: 'URL' },
+      ];
+      const inputs = {};
+      fields.forEach(f => {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = f.placeholder;
+        inp.value = existing ? (existing[f.key] || '') : '';
+        inp.style.cssText = 'width:100%;background:#060918;border:1px solid #2a3460;border-radius:6px;color:#cfd8ff;font-size:0.78rem;padding:6px 8px;margin-bottom:6px;box-sizing:border-box;font-family:inherit;';
+        inputs[f.key] = inp;
+        form.appendChild(inp);
+      });
+      const sel = document.createElement('select');
+      sel.style.cssText = 'width:100%;background:#060918;border:1px solid #2a3460;border-radius:6px;color:#cfd8ff;font-size:0.78rem;padding:6px 8px;margin-bottom:6px;box-sizing:border-box;font-family:inherit;';
+      REF_TYPES.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        if (existing && existing.type === t) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      form.appendChild(sel);
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:8px;';
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save';
+      saveBtn.style.cssText = 'background:#4f8cff;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:0.78rem;';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = 'background:rgba(255,255,255,0.06);color:#cfd8ff;border:1px solid #2a3460;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:0.78rem;';
+      saveBtn.addEventListener('click', () => {
+        if (saveBtn.disabled) return;
+        saveBtn.disabled = true;
+        const newRef = { title: inputs.title.value.trim(), url: inputs.url.value.trim(), type: sel.value };
+        if (!jsonNode.references || jsonNode.references === null) jsonNode.references = [];
+        if (editIdx !== null && editIdx !== undefined) {
+          jsonNode.references[editIdx] = newRef;
+        } else {
+          jsonNode.references.push(newRef);
+        }
+        d.references = jsonNode.references;
+        saveJsonData();
+        rebuild();
+      });
+      cancelBtn.addEventListener('click', () => { form.remove(); });
+      btnRow.appendChild(saveBtn);
+      btnRow.appendChild(cancelBtn);
+      form.appendChild(btnRow);
+      sec.appendChild(form);
+    }
+
+    const addBtn = document.createElement('button');
+    addBtn.textContent = '+ Add reference';
+    addBtn.style.cssText = 'background:none;border:1px dashed #2a3460;color:#6a7a9a;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:0.75rem;margin-top:4px;';
+    addBtn.addEventListener('click', () => showRefForm(null, null));
+    sec.appendChild(addBtn);
+  }
+
+  rebuild();
+  body.appendChild(sec);
+}
+
 function refreshPanel() {
   const mesh = STATE.selectedNode;
   if (!mesh) return;
@@ -1213,7 +1496,6 @@ function refreshPanel() {
     (d.domain ? ' · ' + d.domain : '') +
     (d.difficulty ? ' · ' + d.difficulty : '');
 
-  // Set icon visuals — render actual lit/bump-mapped sphere via offscreen mini renderer
   const icon = document.getElementById('panel-icon');
   const lvl = d.level || 0;
   const colors = ['#000000','#ff6a00','#ffd700','#7ec8e3','#b0c4ff','#ccc'];
@@ -1238,19 +1520,21 @@ function refreshPanel() {
     icon.style.boxShadow = `0 0 18px ${colors[lvl]}66`;
   }
 
-  // Progress
   const nodeIds = getDescendantIds(mesh);
-  const total = nodeIds.length + 1; // include self
+  const total = nodeIds.length + 1;
   const done = nodeIds.filter(id => STATE.completed[id]).length + (STATE.completed[d.id] ? 1 : 0);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   document.getElementById('panel-progress-fill').style.width = pct + '%';
   document.getElementById('panel-progress-label').textContent = pct + '%';
 
-  // Body
   const body = document.getElementById('panel-body');
   body.innerHTML = '';
 
-  // Mark self
+  const jsonNode = findJsonNode(d);
+
+  renderDescriptionSection(body, d, jsonNode);
+  renderReferencesSection(body, d, jsonNode);
+
   const selfSection = document.createElement('div');
   selfSection.className = 'panel-section';
   selfSection.innerHTML = `<div class="panel-section-title">This ${d.type}</div>`;
@@ -1258,20 +1542,19 @@ function refreshPanel() {
   selfSection.appendChild(selfItem);
   body.appendChild(selfSection);
 
-  // Show concepts if subtopic
   if (d.type === 'subtopic' && d.concepts && d.concepts.length) {
     const conSec = document.createElement('div');
     conSec.className = 'panel-section';
     conSec.innerHTML = '<div class="panel-section-title">Concepts</div>';
-    d.concepts.forEach((c, i) => {
-      const cid = idFor('con', d.domain, d.subject, d.chapter, d.label, c);
-      conSec.appendChild(makeConceptItem(cid, c));
+    d.concepts.forEach((c) => {
+      const cName = (typeof c === 'object' && c !== null) ? c.name : c;
+      const cid = idFor('con', d.domain, d.subject, d.chapter, d.label, cName);
+      conSec.appendChild(makeConceptItem(cid, cName));
     });
     body.appendChild(conSec);
   }
 
-  // Children quick list
-  const childOrbs = orbits.filter(o => o.parentMesh === mesh);
+  const childOrbs = orbits.filter(o => o.parentMesh === mesh && !o.isInstanced);
   if (childOrbs.length) {
     const childSec = document.createElement('div');
     childSec.className = 'panel-section';
@@ -1841,14 +2124,14 @@ async function init() {
   let data;
   try {
     loadingText.textContent = 'Parsing curriculum data…';
-    const res = await fetch('theory.json');
-    if (!res.ok) throw new Error('Failed to fetch theory.json');
-    data = await res.json();
+    await resolveJsonPath();
+    const text = await readTextFile(_jsonFilePath);
+    data = JSON.parse(text);
+    _jsonData = data;
   } catch (err) {
     console.error(err);
-    loadingText.textContent = 'Could not load theory.json — using demo data.';
-    data = getDemoData();
-    await new Promise(r => setTimeout(r, 1200));
+    loadingText.textContent = 'Could not load theory.json — ' + err.message;
+    return;
   }
 
   loadingText.textContent = 'Building galaxy…';
