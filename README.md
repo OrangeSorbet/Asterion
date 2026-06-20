@@ -1,3 +1,9 @@
+**CURRENT THEORY.JSON CAN BE CHANGED**  
+Input any kind of data you want in current schema only  
+Schema is NOT flexible YET, this is a future scope. (only text value can be replaced currently)   
+In-app addition of objects is NOT supported YET, this is a future scope  
+This is because app was made for highly specialized purposes  
+
 **1. Install packages**
 ```
 npm install
