@@ -32,10 +32,10 @@ function findJsonNode(userData) {
   const dom = _jsonData.domains.find(d => d.domain === domain);
   if (!dom) return null;
   if (type === 'domain') return ensureRefsAndDesc(dom);
-  const subj = dom.subjects.find(s => s.name === subject);
+  const subj = dom.subjects.find(s => s.name === (subject || label));
   if (!subj) return null;
-  if (type === 'subject') return ensureRefsAndDesc(subj);
-  const chap = subj.chapters.find(c => c.chapter === chapter);
+  if (type === 'subject' || type === 'software' || type === 'hardware' || type === 'mixed') return ensureRefsAndDesc(subj);
+  const chap = subj.chapters.find(c => c.chapter === (chapter || label));
   if (!chap) return null;
   if (type === 'chapter') return ensureRefsAndDesc(chap);
   const topics = chap.topics || chap.subtopics || [];
@@ -54,17 +54,45 @@ function findJsonNode(userData) {
 }
 
 // ─── UNIVERSAL TWEAK CONFIG ─────────────────────────────────────
+// !! TWEAK THESE FREELY !!
 const CONFIG = {
-  domainRadiusBase: 140,
-  domainRadiusStep: 10,
-  subjectRadiusBase: 24,
-  subjectRadiusStep: 8,
-  chapterRadiusBase: 10,
-  chapterRadiusStep: 3.5,
-  subtopicRadiusBase: 5,
-  subtopicRadiusStep: 2,
-  conceptRadiusBase: 2,
-  conceptRadiusStep: 0.7,
+  // --- Orbit spacing ---
+  domainRadiusBase: 200,        // how far domains orbit black hole
+  domainRadiusStep: 14,         // spacing between domain orbits
+  subjectRadiusBase: 34,        // subject orbit around domain
+  subjectRadiusStep: 11,
+  chapterRadiusBase: 14,        // chapter orbit around subject
+  chapterRadiusStep: 5,
+  subtopicRadiusBase: 7,        // subtopic orbit around chapter
+  subtopicRadiusStep: 2.8,
+  conceptRadiusBase: 2.8,       // concept orbit around subtopic
+  conceptRadiusStep: 1.0,
+
+  // --- Object sizes ---
+  sunSizeBase: 9,               // domain star size
+  subjectSunSize: 5,            // subject star size
+  planetSize: 3.2,              // chapter planet size
+  moonSize: 1.1,                // subtopic moon size
+  asteroidSize: 0.38,           // concept asteroid size
+
+  // --- Black hole ---
+  bhCoreRadius: 19,             // black hole sphere radius
+  bhDiskInner: 26,              // accretion disk inner edge
+  bhDiskOuter: 200,             // accretion disk outer edge
+  bhLensStrength: 0.045,        // gravitational lensing warp strength
+  bhLensRadius: 0.07,           // lensing effect screen radius
+
+  // --- Post processing ---
+  bloomStrength: 0.1,           // bloom intensity
+  bloomRadius: 0.1,             // bloom spread
+  bloomThreshold: 0.95,         // what luminance triggers bloom
+  motionBlur: 0.5,             // afterimage dampening (0=none, 0.95=heavy)
+
+  // --- Visuals ---
+  fogDensity: 0.00008,          // scene fog density
+  sunEmissiveIntensity: 1.6,    // sun glow intensity
+  sunLightIntensity: 2.2,       // sun point light intensity
+  sunLightRange: 280,           // sun point light range
 };
 
 // ─── State ────────────────────────────────────────────────────
@@ -172,10 +200,10 @@ renderer.toneMappingExposure = 1.1;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000008);
-scene.fog = new THREE.FogExp2(0x000010, 0.00012);
+scene.fog = new THREE.FogExp2(0x000010, CONFIG.fogDensity);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 20000);
-camera.position.set(0, 180, 420);
+camera.position.set(0, 220, 520);
 
 const controls = new THREE.OrbitControls(camera, canvas);
 controls.enableDamping = true;
@@ -190,8 +218,8 @@ const lensShader = {
     tDiffuse: { value: null },
     tDepth: { value: null },
     bhScreen: { value: new THREE.Vector2(0.5, 0.5) },
-    bhStrength: { value: 0.025 },
-    bhRadius: { value: 0.05 },
+    bhStrength: { value: CONFIG.bhLensStrength },
+    bhRadius: { value: CONFIG.bhLensRadius },
     aspect: { value: window.innerWidth / window.innerHeight },
     bhVisible: { value: 1.0 },
     uBhDepth: { value: 0.5 },
@@ -274,6 +302,11 @@ const accretionDiskShader = {
       vec2 u = f * f * (3.0 - 2.0 * f);
       return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
     }
+    float fbm(vec2 p) {
+      float v = 0.0; float amp = 0.5;
+      for(int i=0;i<5;i++){ v += noise(p)*amp; p*=2.1; amp*=0.5; }
+      return v;
+    }
     vec2 rotate(vec2 p, float a) {
       float s = sin(a), c = cos(a);
       return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
@@ -282,18 +315,48 @@ const accretionDiskShader = {
       float dist = length(vPos);
       float t = (dist - uInner) / (uOuter - uInner);
       if (dist < uInner || dist > uOuter) discard;
-      float shear = -uTime * (2.0 - t) * 0.25;
+
+      // differential rotation — inner spins faster
+      float shear = -uTime * (2.2 - t * 1.8) * 0.3;
       vec2 rp = rotate(vPos, shear);
-      float turb = noise(rp * 0.06) * 0.6 + noise(rp * 0.16 + 11.0) * 0.4;
-      float edgeFade = smoothstep(0.0, 0.22, t) * smoothstep(1.0, 0.65, t);
+
+      // multi octave turbulence
+      float turb = fbm(rp * 0.05 + uTime * 0.01);
+      float turb2 = fbm(rp * 0.12 - uTime * 0.008 + 7.3);
+      float combined = turb * 0.65 + turb2 * 0.35;
+
+      // bright filaments — stretched along rotation
+      vec2 rp2 = rotate(vPos, shear * 1.4);
+      float filament = pow(fbm(rp2 * vec2(0.03, 0.18) + uTime * 0.012), 1.8);
+
+      float edgeFade = smoothstep(0.0, 0.08, t) * smoothstep(1.0, 0.55, t);
+      float innerGlow = smoothstep(0.35, 0.0, t); // extra hot near black hole
+
       float heat = 1.0 - t;
-      vec3 hot = vec3(1.0, 0.95, 0.85);
-      vec3 mid = vec3(1.0, 0.55, 0.1);
-      vec3 cool = vec3(0.6, 0.1, 0.05);
-      vec3 color = mix(mid, hot, smoothstep(0.0, 0.35, heat));
-      color = mix(cool, color, smoothstep(0.0, 0.6, heat));
-      float alpha = edgeFade * (0.18 + turb * 0.32);
-      gl_FragColor = vec4(color * (0.6 + turb * 0.8), alpha);
+
+      // color: white hot core → orange → deep red rim
+      vec3 white = vec3(1.0, 0.98, 0.92);
+      vec3 hot   = vec3(1.0, 0.85, 0.4);
+      vec3 mid   = vec3(1.0, 0.45, 0.08);
+      vec3 cool  = vec3(0.7, 0.12, 0.03);
+      vec3 rim   = vec3(0.3, 0.04, 0.01);
+
+      vec3 color = mix(rim, cool, smoothstep(0.0, 0.25, heat));
+      color = mix(color, mid, smoothstep(0.2, 0.5, heat));
+      color = mix(color, hot, smoothstep(0.45, 0.75, heat));
+      color = mix(color, white, smoothstep(0.7, 1.0, heat) * innerGlow * 1.5);
+
+      color += filament * vec3(1.0, 0.7, 0.3) * 0.4;
+
+      // doppler beaming — left side rotating toward viewer = brighter
+      float doppler = 0.5 + 0.5 * sin(atan(vPos.y, vPos.x));
+      float dopplerBoost = 1.0 + doppler * 1.4;
+
+      float alpha = edgeFade * (0.12 + combined * 0.08);
+      alpha += innerGlow * 0.04;
+      alpha *= (0.4 + doppler * 0.6);
+
+      gl_FragColor = vec4(color * (0.5 + combined * 0.3 + filament * 0.2) * dopplerBoost, alpha);
     }
   `
 };
@@ -307,6 +370,18 @@ depthRenderTarget.depthTexture.type = THREE.UnsignedIntType;
 const composer = new THREE.EffectComposer(renderer);
 const renderPass = new THREE.RenderPass(scene, camera);
 composer.addPass(renderPass);
+
+const bloomPass = new THREE.UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  CONFIG.bloomStrength,
+  CONFIG.bloomRadius,
+  CONFIG.bloomThreshold
+);
+composer.addPass(bloomPass);
+
+const afterimagePass = new THREE.AfterimagePass(CONFIG.motionBlur);
+composer.addPass(afterimagePass);
+
 const lensPass = new THREE.ShaderPass(new THREE.ShaderMaterial(lensShader), 'tDiffuse');
 lensPass.renderToScreen = true;
 composer.addPass(lensPass);
@@ -323,8 +398,9 @@ function updateLensUniforms() {
   const dist = camera.position.distanceTo(blackHoleMesh.position);
   const fovRad = camera.fov * Math.PI / 180;
   const visibleHeight = 2 * Math.tan(fovRad / 2) * dist;
-  const radiusNdc = _bhWorldRadius / visibleHeight;
+  const radiusNdc = CONFIG.bhCoreRadius / visibleHeight;
   lensPass.uniforms.bhRadius.value = Math.min(Math.max(radiusNdc, 0.015), 0.5);
+  lensPass.uniforms.bhStrength.value = CONFIG.bhLensStrength;
 }
 // ─── Lighting ─────────────────────────────────────────────────
 const ambientLight = new THREE.AmbientLight(0x0a0a1a, 1.2);
@@ -461,15 +537,16 @@ function fbm(x, y, seed = 0, octaves = 5) {
 }
 
 const PLANET_CONFIGS = [
-  // [baseH, saturation style, type]
-  { h1: 200, h2: 240, s: 80, type: 'rocky' },     // ice world
-  { h1: 30,  h2: 60,  s: 90, type: 'desert' },    // desert
-  { h1: 120, h2: 160, s: 70, type: 'forest' },    // forest
-  { h1: 0,   h2: 20,  s: 85, type: 'lava' },      // lava
-  { h1: 190, h2: 220, s: 75, type: 'ocean' },     // ocean
-  { h1: 260, h2: 290, s: 60, type: 'gas' },       // gas giant purple
-  { h1: 40,  h2: 80,  s: 60, type: 'gas' },       // gas giant yellow
-  { h1: 340, h2: 360, s: 80, type: 'rocky' },     // red rocky
+  { type: 'ocean',  cloudAmt: 0.5 },
+  { type: 'desert', cloudAmt: 0.1 },
+  { type: 'forest', cloudAmt: 0.4 },
+  { type: 'lava',   cloudAmt: 0.05 },
+  { type: 'ice',    cloudAmt: 0.6 },
+  { type: 'gas',    cloudAmt: 0.0 },
+  { type: 'gas2',   cloudAmt: 0.0 },
+  { type: 'rocky',  cloudAmt: 0.15 },
+  { type: 'swamp',  cloudAmt: 0.55 },
+  { type: 'arid',   cloudAmt: 0.08 },
 ];
 
 function makePlanetTexture(seed, size = 256) {
@@ -480,31 +557,198 @@ function makePlanetTexture(seed, size = 256) {
     for (let y = 0; y < sz; y++) {
       for (let x = 0; x < sz; x++) {
         const u = x / sz, v = y / sz;
-        const n = fbm(u * 3, v * 3, seed * 17);
-        const n2 = fbm(u * 8 + 1, v * 8 + 1, seed * 31);
-        let h, s, l;
+
+        // continent mask — large scale fbm
+        const continent = fbm(u * 2.2, v * 2.2, seed * 17, 6);
+        // detail noise
+        const detail = fbm(u * 7, v * 7, seed * 31, 4);
+        const fine = fbm(u * 18, v * 18, seed * 53, 3);
+        // cloud layer
+        const cloud = fbm(u * 4 + 0.5, v * 4 + 0.5, seed * 73, 5);
+        const cloud2 = fbm(u * 9, v * 9, seed * 89, 3);
+        const cloudMask = Math.max(0, cloud * 0.7 + cloud2 * 0.3 - (1.0 - cfg.cloudAmt));
+
+        let r, g, b;
+
         if (cfg.type === 'gas') {
-          const band = Math.sin(v * Math.PI * 8 + n * 2) * 0.5 + 0.5;
-          h = cfg.h1 + (cfg.h2 - cfg.h1) * band;
-          s = cfg.s - n2 * 20;
-          l = 35 + band * 25 + n2 * 15;
-        } else if (cfg.type === 'ocean') {
-          h = n > 0.52 ? 110 + n2 * 30 : cfg.h1 + n2 * 20;
-          s = n > 0.52 ? 60 : 80;
-          l = n > 0.52 ? 30 + n * 20 : 20 + n * 30;
+          // jupiter style — bands with turbulence
+          const band = Math.sin(v * Math.PI * 10 + continent * 2.5) * 0.5 + 0.5;
+          const storm = fbm(u * 6, v * 6, seed * 41, 4);
+          const h = 25 + band * 30 + storm * 15;
+          const s = 70 + storm * 20;
+          const l = 38 + band * 22 + storm * 12;
+          const [rr,gg,bb] = hsl2rgb(h/360, s/100, l/100);
+          r=rr; g=gg; b=bb;
+
+        } else if (cfg.type === 'gas2') {
+          // saturn style — pale golden bands
+          const band = Math.sin(v * Math.PI * 8 + continent * 1.8) * 0.5 + 0.5;
+          const storm = fbm(u * 5, v * 5, seed * 37, 3);
+          const h = 40 + band * 20;
+          const s = 55 + storm * 15;
+          const l = 55 + band * 18 + storm * 8;
+          const [rr,gg,bb] = hsl2rgb(h/360, s/100, l/100);
+          r=rr; g=gg; b=bb;
+
         } else if (cfg.type === 'lava') {
-          h = n > 0.5 ? 0 + n2 * 30 : 20 + n2 * 20;
-          s = 90;
-          l = n > 0.5 ? 50 + n2 * 30 : 8 + n * 10;
+          // dark crust with glowing fissures
+          const fissure = fbm(u * 12, v * 12, seed * 23, 5);
+          const heat = Math.pow(Math.max(0, fissure - 0.45) / 0.55, 2.0);
+          const crust = continent * 0.5 + detail * 0.3 + fine * 0.2;
+          const h = heat > 0.3 ? 20 + heat * 20 : 0;
+          const s = heat > 0.1 ? 90 : 20;
+          const l = Math.max(4, heat * 70 + crust * 12);
+          const [rr,gg,bb] = hsl2rgb(h/360, s/100, l/100);
+          r=rr; g=gg; b=bb;
+
+        } else if (cfg.type === 'ocean') {
+          // deep ocean with islands/continents
+          const land = continent > 0.54;
+          const shallow = continent > 0.48 && !land;
+          if (land) {
+            // land — greens and browns
+            const elevation = (continent - 0.54) / 0.46;
+            const h = elevation > 0.5 ? 35 + detail * 15 : 105 + detail * 20;
+            const s = elevation > 0.5 ? 40 : 55;
+            const l = 25 + elevation * 25 + detail * 15;
+            const [rr,gg,bb] = hsl2rgb(h/360, s/100, l/100);
+            r=rr; g=gg; b=bb;
+          } else if (shallow) {
+            const [rr,gg,bb] = hsl2rgb(0.55, 0.75, 0.28 + detail * 0.1);
+            r=rr; g=gg; b=bb;
+          } else {
+            // deep ocean
+            const depth = (0.48 - continent) / 0.48;
+            const [rr,gg,bb] = hsl2rgb(0.6, 0.8, Math.max(0.08, 0.22 - depth * 0.14 + detail * 0.05));
+            r=rr; g=gg; b=bb;
+          }
+
+        } else if (cfg.type === 'ice') {
+          // frozen world — white/blue with cracks
+          const crack = fbm(u * 14, v * 14, seed * 29, 4);
+          const isCrack = crack > 0.62;
+          if (isCrack) {
+            const [rr,gg,bb] = hsl2rgb(0.58, 0.6, 0.3 + detail * 0.1);
+            r=rr; g=gg; b=bb;
+          } else {
+            const h = 0.55 + detail * 0.05;
+            const s = 0.2 + continent * 0.2;
+            const l = 0.72 + fine * 0.2;
+            const [rr,gg,bb] = hsl2rgb(h, s, l);
+            r=rr; g=gg; b=bb;
+          }
+
+        } else if (cfg.type === 'desert') {
+          // dune world — orange/tan with rocky outcrops
+          const dune = Math.sin(u * 20 + continent * 4) * 0.5 + 0.5;
+          const rock = continent > 0.62;
+          if (rock) {
+            const [rr,gg,bb] = hsl2rgb(0.07, 0.5, 0.28 + detail * 0.12);
+            r=rr; g=gg; b=bb;
+          } else {
+            const h = 0.08 + dune * 0.04 + detail * 0.02;
+            const s = 0.65 + dune * 0.15;
+            const l = 0.42 + dune * 0.18 + fine * 0.08;
+            const [rr,gg,bb] = hsl2rgb(h, s, l);
+            r=rr; g=gg; b=bb;
+          }
+
+        } else if (cfg.type === 'forest') {
+          // lush world — deep greens with rivers
+          const elevation = continent;
+          const river = fbm(u * 10, v * 10, seed * 61, 4) > 0.66;
+          if (river && elevation < 0.6) {
+            const [rr,gg,bb] = hsl2rgb(0.58, 0.7, 0.2 + detail * 0.08);
+            r=rr; g=gg; b=bb;
+          } else {
+            const h = 0.28 + (1-elevation) * 0.08 + detail * 0.04;
+            const s = 0.6 + continent * 0.2;
+            const l = 0.18 + elevation * 0.22 + detail * 0.12;
+            const [rr,gg,bb] = hsl2rgb(h, s, l);
+            r=rr; g=gg; b=bb;
+          }
+
+        } else if (cfg.type === 'swamp') {
+          // murky greens and browns
+          const h = 0.22 + continent * 0.08 + detail * 0.05;
+          const s = 0.45 + detail * 0.25;
+          const l = 0.14 + continent * 0.2 + fine * 0.1;
+          const [rr,gg,bb] = hsl2rgb(h, s, l);
+          r=rr; g=gg; b=bb;
+
+        } else if (cfg.type === 'arid') {
+          // cracked dry surface
+          const crack = fbm(u * 16, v * 16, seed * 43, 4) > 0.6;
+          if (crack) {
+            const [rr,gg,bb] = hsl2rgb(0.06, 0.3, 0.15);
+            r=rr; g=gg; b=bb;
+          } else {
+            const h = 0.06 + detail * 0.03;
+            const s = 0.4 + fine * 0.2;
+            const l = 0.35 + continent * 0.2 + detail * 0.1;
+            const [rr,gg,bb] = hsl2rgb(h, s, l);
+            r=rr; g=gg; b=bb;
+          }
+
         } else {
-          h = cfg.h1 + (cfg.h2 - cfg.h1) * n;
-          s = cfg.s - n2 * 15;
-          l = 20 + n * 35 + n2 * 15;
+          // rocky — grey browns
+          const h = 0.06 + continent * 0.04;
+          const s = 0.2 + detail * 0.15;
+          const l = 0.18 + continent * 0.28 + detail * 0.1 + fine * 0.06;
+          const [rr,gg,bb] = hsl2rgb(h, s, l);
+          r=rr; g=gg; b=bb;
         }
-        // hsl to rgb
-        const [r, g, b] = hsl2rgb(h / 360, s / 100, l / 100);
+
+        // cloud overlay — white wispy
+        if (cloudMask > 0) {
+          const cf = Math.min(1, cloudMask * 3.5);
+          r = Math.round(r + (255 - r) * cf);
+          g = Math.round(g + (255 - g) * cf);
+          b = Math.round(b + (255 - b) * cf);
+        }
+
         const idx = (y * sz + x) * 4;
-        d[idx] = r; d[idx+1] = g; d[idx+2] = b; d[idx+3] = 255;
+        d[idx] = Math.min(255,Math.max(0,r));
+        d[idx+1] = Math.min(255,Math.max(0,g));
+        d[idx+2] = Math.min(255,Math.max(0,b));
+        d[idx+3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  });
+}
+
+function makeMoonTexture(seed, size = 128) {
+  return makeProceduralTexture(size, (ctx, sz) => {
+    const img = ctx.createImageData(sz, sz);
+    const d = img.data;
+    for (let y = 0; y < sz; y++) {
+      for (let x = 0; x < sz; x++) {
+        const u = x/sz, v = y/sz;
+        // base grey rocky surface
+        const n = fbm(u*6, v*6, seed*13, 5);
+        const n2 = fbm(u*18, v*18, seed*7, 3);
+        // craters — circular dark depressions
+        let craterDark = 0;
+        const craterCount = 4 + (seed % 6);
+        for (let c = 0; c < craterCount; c++) {
+          const cu = noise(c * 3.7, seed * 0.4 + c);
+          const cv = noise(seed * 0.6 + c, c * 2.9);
+          const cr = 0.05 + noise(c, seed * 2.1) * 0.1;
+          const cd = Math.sqrt((u-cu)*(u-cu)+(v-cv)*(v-cv));
+          const rim = Math.max(0, 1 - Math.abs(cd - cr) / (cr * 0.3));
+          const floor = Math.max(0, 1 - cd / (cr * 0.7));
+          craterDark += floor * 0.35 - rim * 0.15;
+        }
+        const base = 0.45 + n * 0.3 + n2 * 0.1 - Math.max(0, craterDark);
+        const grey = Math.min(255, Math.max(0, base * 200));
+        // slight color variation — some moons more blue, some more brown
+        const tint = (seed % 3);
+        const rr = tint === 1 ? grey * 0.95 : grey;
+        const gg = grey * 0.97;
+        const bb = tint === 0 ? Math.min(255, grey * 1.08) : grey * 0.93;
+        const idx = (y*sz+x)*4;
+        d[idx] = rr; d[idx+1] = gg; d[idx+2] = bb; d[idx+3] = 255;
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -532,18 +776,65 @@ function makeSunTexture(seed, size = 256) {
     const img = ctx.createImageData(sz, sz);
     const d = img.data;
     const cx = sz/2, cy = sz/2;
+
+    // precompute sunspot centers (3-6 spots)
+    const spotCount = 3 + (seed % 4);
+    const spots = [];
+    for (let s = 0; s < spotCount; s++) {
+      spots.push({
+        u: 0.2 + fbm(s * 3.1, seed * 0.7, s * 7, 1) * 0.6,
+        v: 0.2 + fbm(seed * 0.3, s * 2.7, seed * 3, 1) * 0.6,
+        r: 0.06 + fbm(s * 1.1, seed * 0.5, s, 1) * 0.09,
+        depth: 0.7 + fbm(s * 1.7, seed * 1.3, s * 5, 1) * 0.3
+      });
+    }
+
     for (let y = 0; y < sz; y++) {
       for (let x = 0; x < sz; x++) {
         const u = x/sz, v = y/sz;
         const n = fbm(u*4, v*4, seed*7, 6);
         const n2 = fbm(u*10+2, v*10+2, seed*13, 4);
+        const n3 = fbm(u*20+5, v*20+5, seed*19, 3);
         const dx = (x-cx)/cx, dy = (y-cy)/cy;
         const dist = Math.sqrt(dx*dx+dy*dy);
-        const temp = 1 - dist * 0.6 + n * 0.3;
-        // corona colors: yellow → orange → red → dark
-        const r = Math.min(255, temp * 280 + n2 * 60);
-        const g = Math.min(255, temp * 160 + n2 * 20);
-        const b = Math.min(255, temp * 20 + n2 * 10);
+
+        // limb darkening — edges darker like real sun
+        const limb = 1.0 - dist * dist * 0.5;
+        const temp = limb * (1.0 - dist * 0.3) + n * 0.25;
+
+        // granulation — tiny bright/dark cells
+        const granule = fbm(u*28, v*28, seed*11, 3) * 0.12;
+
+        // sunspot darkening
+        let spotDark = 0.0;
+        for (const sp of spots) {
+          const sdx = u - sp.u, sdy = v - sp.v;
+          const sd = Math.sqrt(sdx*sdx + sdy*sdy);
+          const spotEdge = 1.0 - Math.min(1.0, sd / sp.r);
+          const spotVal = Math.pow(Math.max(0, spotEdge), 2.0) * sp.depth;
+          // umbra darker than penumbra
+          const umbra = Math.pow(Math.max(0, spotEdge - 0.3) / 0.7, 2.0) * sp.depth * 0.6;
+          spotDark = Math.max(spotDark, spotVal * 0.6 + umbra);
+        }
+
+        const finalTemp = Math.max(0, temp + granule - spotDark * 1.8);
+
+        // color ramp: white core → yellow → orange → dark red edge
+        let r, g, b;
+        if (finalTemp > 0.75) {
+          const t = (finalTemp - 0.75) / 0.25;
+          r = 255; g = Math.min(255, 200 + t * 55); b = Math.min(255, t * 180);
+        } else if (finalTemp > 0.45) {
+          const t = (finalTemp - 0.45) / 0.30;
+          r = 255; g = Math.min(255, 100 + t * 100); b = 0;
+        } else if (finalTemp > 0.2) {
+          const t = (finalTemp - 0.2) / 0.25;
+          r = Math.min(255, 160 + t * 95); g = Math.min(255, t * 100); b = 0;
+        } else {
+          const t = finalTemp / 0.2;
+          r = Math.min(255, t * 160); g = 0; b = 0;
+        }
+
         const idx = (y*sz+x)*4;
         d[idx] = r; d[idx+1] = g; d[idx+2] = b; d[idx+3] = 255;
       }
@@ -712,47 +1003,76 @@ function buildNebulae() {
 
 // ─── Black Hole ───────────────────────────────────────────────
 let blackHoleMesh, accretionMesh;
+const accretionLayers = [];
+
 function buildBlackHole() {
-  // Core (dark sphere)
-  const geo = new THREE.SphereGeometry(19, 64, 64);
+  // Core (absolute black sphere — renders on top)
+  const geo = new THREE.SphereGeometry(CONFIG.bhCoreRadius, 64, 64);
   const mat = new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: true, depthTest: true });
   blackHoleMesh = new THREE.Mesh(geo, mat);
   blackHoleMesh.renderOrder = 999;
-  blackHoleMesh.userData = {
-    id: 'root',
-    type: 'root',
-    label: 'Computer Engineering',
-    level: 0
-  };
+  blackHoleMesh.userData = { id: 'root', type: 'root', label: 'Computer Engineering', level: 0 };
   scene.add(blackHoleMesh);
   allNodes.push(blackHoleMesh);
   nodeLookup['root'] = blackHoleMesh;
 
-  // Photon ring glow (torus)
-  const ring1 = new THREE.Mesh(
-    new THREE.TorusGeometry(24, 0.3, 32, 128),
-    new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.08 })
+  // Photon ring — razor thin gold, additive so it glows not greys
+  const photonRing = new THREE.Mesh(
+    new THREE.TorusGeometry(CONFIG.bhCoreRadius * 1.26, 0.18, 32, 256),
+    new THREE.MeshBasicMaterial({ color: 0xffcc77, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })
   );
-  ring1.rotation.x = Math.PI / 2;
-  scene.add(ring1);
+  photonRing.rotation.x = Math.PI / 2;
+  scene.add(photonRing);
 
-  // Accretion disk — real shader-driven glowing disk
-  const accGeo = new THREE.RingGeometry(26, 160, 256, 1);
-  const accMat = new THREE.ShaderMaterial({
-    uniforms: THREE.UniformsUtils.clone(accretionDiskShader.uniforms),
-    vertexShader: accretionDiskShader.vertexShader,
-    fragmentShader: accretionDiskShader.fragmentShader,
-    transparent: true, side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending, depthWrite: false
+  // Volumetric accretion disk — 6 stacked layers at slight angle offsets
+  // gives illusion of thickness and volume
+  const diskAngles = [0, 0.04, -0.04, 0.09, -0.09, 0.15, -0.15];
+  const diskOpacities = [0.08, 0.05, 0.05, 0.03, 0.03, 0.015, 0.015];
+
+  diskAngles.forEach((angleOffset, i) => {
+    const accGeo = new THREE.RingGeometry(CONFIG.bhDiskInner, CONFIG.bhDiskOuter, 256, 1);
+    const accMat = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.clone(accretionDiskShader.uniforms),
+      vertexShader: accretionDiskShader.vertexShader,
+      fragmentShader: accretionDiskShader.fragmentShader,
+      transparent: true,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    accMat.uniforms.uInner.value = CONFIG.bhDiskInner;
+    accMat.uniforms.uOuter.value = CONFIG.bhDiskOuter;
+    const accLayer = new THREE.Mesh(accGeo, accMat);
+    accLayer.rotation.x = Math.PI / 2 + 0.18 + angleOffset;
+    accLayer.rotation.z = angleOffset * 0.5;
+    scene.add(accLayer);
+    accretionLayers.push({ mesh: accLayer, opacity: diskOpacities[i] });
+    if (i === 0) accretionMesh = accLayer;
   });
-  accretionMesh = new THREE.Mesh(accGeo, accMat);
-  accretionMesh.rotation.x = Math.PI / 2 + 0.2;
-  scene.add(accretionMesh);
 
-  // Gravitational lensing effect — outer glow sphere
-  const lensGeo = new THREE.SphereGeometry(28, 32, 32);
-  const lensMat = new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.03, side: THREE.BackSide });
-  scene.add(new THREE.Mesh(lensGeo, lensMat));
+  // Outer glow halo around black hole
+  const haloGeo = new THREE.SphereGeometry(CONFIG.bhCoreRadius * 1.8, 32, 32);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0xff6600,
+    transparent: true,
+    opacity: 0.015,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  scene.add(new THREE.Mesh(haloGeo, haloMat));
+
+  // Deep outer atmospheric glow
+  const atmoGeo = new THREE.SphereGeometry(CONFIG.bhCoreRadius * 3.5, 32, 32);
+  const atmoMat = new THREE.MeshBasicMaterial({
+    color: 0xff4400,
+    transparent: true,
+    opacity: 0.015,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  scene.add(new THREE.Mesh(atmoGeo, atmoMat));
 }
 
 // ─── Orbit Ring ───────────────────────────────────────────────
@@ -802,10 +1122,11 @@ function updateTrail(trail, pos) {
 function makeConnection(fromMesh, toMesh, color = 0x223355) {
   const pts = [fromMesh.position.clone(), toMesh.position.clone()];
   const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.15 });
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.0 });
   const line = new THREE.Line(geo, mat);
   line.userData.isConnection = true;
   line.frustumCulled = false;
+  line.visible = false;
   scene.add(line);
   connections.push({ line, from: fromMesh, to: toMesh, mat });
 }
@@ -927,19 +1248,42 @@ function buildGalaxy(data) {
     const dColor = new THREE.Color().setHSL(di / domainCount, 0.85, 0.55);
     const dColorHex = dColor.getHex();
     const dTex = makeSunTexture(domainSeed * 3, 256);
-    const dGeo = makeSphere(7, 48);
+    const dGeo = makeSphere(CONFIG.sunSizeBase, 48);
     const dBump = makeBumpTexture(domainSeed * 3, 256);
     const dMat = new THREE.MeshStandardMaterial({
-      map: dTex, bumpMap: dBump, bumpScale: 0.2, emissive: dColor, emissiveIntensity: 1.8,
-      roughness: 0.6, metalness: 0
+      map: dTex, bumpMap: dBump, bumpScale: 0.3,
+      emissive: dColor, emissiveIntensity: CONFIG.sunEmissiveIntensity,
+      roughness: 0.55, metalness: 0
     });
     const dMesh = new THREE.Mesh(dGeo, dMat);
     scene.add(dMesh);
     registerNode(dMesh, idFor('domain', domain.domain), domain.domain, 'domain', 1, { domain: domain.domain, description: domain.description, references: domain.references });
-    addSunLight(dMesh, dColorHex);
 
-    // Domain point light
-    const dLight = new THREE.PointLight(dColorHex, 2.5, 280);
+    // Corona glow sprite — additive halo around sun
+    const coronaTex = makeStarGlowTexture(
+      `rgba(${Math.round(dColor.r*255)},${Math.round(dColor.g*255)},${Math.round(dColor.b*255)},1.0)`, 128
+    );
+    const coronaMat = new THREE.SpriteMaterial({
+      map: coronaTex, transparent: true,
+      opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const coronaSprite = new THREE.Sprite(coronaMat);
+    const coronaSize = CONFIG.sunSizeBase * 5.5;
+    coronaSprite.scale.set(coronaSize, coronaSize, 1);
+    dMesh.add(coronaSprite);
+
+    // Secondary wider softer corona
+    const corona2Mat = new THREE.SpriteMaterial({
+      map: coronaTex, transparent: true,
+      opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const corona2Sprite = new THREE.Sprite(corona2Mat);
+    const corona2Size = CONFIG.sunSizeBase * 11;
+    corona2Sprite.scale.set(corona2Size, corona2Size, 1);
+    dMesh.add(corona2Sprite);
+
+    // Domain point light — actual luminance
+    const dLight = new THREE.PointLight(dColorHex, CONFIG.sunLightIntensity, CONFIG.sunLightRange);
     dMesh.add(dLight);
 
     // Domain orbit
@@ -970,18 +1314,33 @@ function buildGalaxy(data) {
       const sTex = makeSunTexture(domainSeed * 5, 128);
       const sColor = new THREE.Color().setHSL((di / domainCount + 0.05 * si) % 1, 0.75, 0.62);
       const sColorHex = sColor.getHex();
-      const sGeo = makeSphere(4, 32);
+      const sGeo = makeSphere(CONFIG.subjectSunSize, 32);
       const sBump = makeBumpTexture(domainSeed * 5, 128);
       const sMat = new THREE.MeshStandardMaterial({
-        map: sTex, bumpMap: sBump, bumpScale: 0.25, emissive: sColor, emissiveIntensity: 1.4, roughness: 0.5
+        map: sTex, bumpMap: sBump, bumpScale: 0.25,
+        emissive: sColor, emissiveIntensity: CONFIG.sunEmissiveIntensity * 0.8,
+        roughness: 0.5
       });
       const sMesh = new THREE.Mesh(sGeo, sMat);
       scene.add(sMesh);
       registerNode(sMesh, idFor('subj', domain.domain, subj.name), subj.name, 'subject', 2, {
         domain: domain.domain, difficulty: subj.difficulty, type: subj.type, description: subj.description, references: subj.references
       });
-      addSunLight(sMesh, sColorHex);
-      const sLight = new THREE.PointLight(sColorHex, 1.5, 100);
+
+      // Subject corona glow
+      const sCoronaTex = makeStarGlowTexture(
+        `rgba(${Math.round(sColor.r*255)},${Math.round(sColor.g*255)},${Math.round(sColor.b*255)},1.0)`, 96
+      );
+      const sCoronaMat = new THREE.SpriteMaterial({
+        map: sCoronaTex, transparent: true,
+        opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const sCorona = new THREE.Sprite(sCoronaMat);
+      const sCoronaSize = CONFIG.subjectSunSize * 5;
+      sCorona.scale.set(sCoronaSize, sCoronaSize, 1);
+      sMesh.add(sCorona);
+
+      const sLight = new THREE.PointLight(sColorHex, CONFIG.sunLightIntensity * 0.6, CONFIG.sunLightRange * 0.5);
       sMesh.add(sLight);
 
       const sOrbitLine = makeOrbitLine(sRadius, sIncl, sColorHex, 0.18);
@@ -1008,13 +1367,13 @@ function buildGalaxy(data) {
         const cRadius = CONFIG.chapterRadiusBase + ci * CONFIG.chapterRadiusStep;
         const cAngle = (ci / Math.max(chapters.length, 1)) * Math.PI * 2;
         const cIncl = (Math.random() - 0.5) * 0.7;
-        const cTex = makePlanetTexture(domainSeed, 128);
-        const cBump = makeBumpTexture(domainSeed, 128);
+        const cTex = makePlanetTexture(domainSeed, 256);
+        const cBump = makeBumpTexture(domainSeed, 256);
         const cColorHex = getNodeColor(3);
-        const cGeo = makeSphere(2.5, 24);
+        const cGeo = makeSphere(CONFIG.planetSize, 32);
         const cMat = new THREE.MeshStandardMaterial({
-          map: cTex, bumpMap: cBump, bumpScale: 0.3,
-          roughness: 0.75, metalness: 0.05,
+          map: cTex, bumpMap: cBump, bumpScale: 0.55,
+          roughness: 0.78, metalness: 0.04,
           emissive: new THREE.Color(0x7ec8e3), emissiveIntensity: 0
         });
         const cMesh = new THREE.Mesh(cGeo, cMat);
@@ -1022,6 +1381,18 @@ function buildGalaxy(data) {
         registerNode(cMesh, idFor('chap', domain.domain, subj.name, chap.chapter), chap.chapter, 'chapter', 3, {
           domain: domain.domain, subject: subj.name, description: chap.description, references: chap.references
         });
+
+        // Atmosphere rim glow sprite
+        const atmColor = new THREE.Color(cTex ? 0x4488ff : 0x88aaff);
+        const atmTex = makeStarGlowTexture(`rgba(80,140,255,1.0)`, 64);
+        const atmMat = new THREE.SpriteMaterial({
+          map: atmTex, transparent: true,
+          opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false
+        });
+        const atmSprite = new THREE.Sprite(atmMat);
+        const atmSize = CONFIG.planetSize * 3.2;
+        atmSprite.scale.set(atmSize, atmSize, 1);
+        cMesh.add(atmSprite);
 
         const cOrbitLine = makeOrbitLine(cRadius, cIncl, 0x3a5a7a, 0.15);
         sMesh.add(cOrbitLine);
@@ -1043,11 +1414,17 @@ function buildGalaxy(data) {
           const stRadius = CONFIG.subtopicRadiusBase + sti * CONFIG.subtopicRadiusStep;
           const stAngle = (sti / Math.max(subtopics.length, 1)) * Math.PI * 2;
           const stIncl = (Math.random() - 0.5) * 0.8;
-          const stGeo = makeSphere(0.85, 16);
-          const stBump = makeBumpTexture(domainSeed * 9, 64);
+          const stGeo = makeSphere(CONFIG.moonSize, 20);
+          const stBump = makeBumpTexture(domainSeed * 9, 128);
+          // moon color — grey rocky with slight blue tint variation
+          const moonHue = 0.55 + (domainSeed % 7) * 0.04;
+          const moonColor = new THREE.Color().setHSL(moonHue, 0.12, 0.55 + (domainSeed % 5) * 0.06);
+          const stMoonTex = makeMoonTexture(domainSeed * 9, 128);
           const stMat = new THREE.MeshStandardMaterial({
-            color: 0xb0c4ff, bumpMap: stBump, bumpScale: 0.15, roughness: 0.8, metalness: 0,
-            emissive: new THREE.Color(0x102050), emissiveIntensity: 0.5
+            map: stMoonTex,
+            bumpMap: stBump, bumpScale: 0.4,
+            roughness: 0.92, metalness: 0.0,
+            emissive: new THREE.Color(0x080818), emissiveIntensity: 0.2
           });
           const stMesh = new THREE.Mesh(stGeo, stMat);
           scene.add(stMesh);
@@ -1076,11 +1453,16 @@ function buildGalaxy(data) {
             const conRadius = CONFIG.conceptRadiusBase + coni * CONFIG.conceptRadiusStep;
             const conAngle = (coni / Math.max(concepts.length, 1)) * Math.PI * 2;
             const conIncl = (Math.random() - 0.5) * 1.2;
-            const conGeo = new THREE.DodecahedronGeometry(0.3, 0);
+            const conGeo = new THREE.IcosahedronGeometry(CONFIG.asteroidSize, 0);
             const conBump = makeBumpTexture(domainSeed * 11, 32);
+            // asteroid color — dark rocky browns and greys
+            const astColors = [0x5a4a3a, 0x4a4040, 0x3a3a2a, 0x6a5a4a, 0x3a3030];
+            const astColor = astColors[domainSeed % astColors.length];
             const conMat = new THREE.MeshStandardMaterial({
-              color: 0xcccccc, bumpMap: conBump, bumpScale: 0.1, roughness: 1, metalness: 0.1,
-              emissive: new THREE.Color(0x111111), emissiveIntensity: 0
+              color: astColor,
+              bumpMap: conBump, bumpScale: 0.3,
+              roughness: 0.98, metalness: 0.05,
+              emissive: new THREE.Color(0x0a0806), emissiveIntensity: 0
             });
             const conMesh = new THREE.Mesh(conGeo, conMat);
             conMesh.visible = false;
@@ -1709,10 +2091,13 @@ function animate() {
   STATE.time += delta;
   const speed = STATE.speed;
 
-  // Black hole accretion disk rotation
-  if (accretionMesh) {
-    accretionMesh.rotation.z += delta * 0.15 * speed;
-    accretionMesh.material.uniforms.uTime.value = STATE.time;
+  // Black hole accretion disk rotation — all layers
+  for (let li = 0; li < accretionLayers.length; li++) {
+    const layer = accretionLayers[li];
+    // inner layers spin faster, outer slower
+    const spinSpeed = 0.18 - li * 0.015;
+    layer.mesh.rotation.z += delta * spinSpeed * speed;
+    layer.mesh.material.uniforms.uTime.value = STATE.time;
   }
 
   // Update orbits
@@ -2090,6 +2475,7 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
+  bloomPass.setSize(window.innerWidth, window.innerHeight);
   depthRenderTarget.setSize(window.innerWidth, window.innerHeight);
 });
 

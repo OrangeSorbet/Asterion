@@ -2,3 +2,9 @@ node_modules/
 old-versions/
 src-tauri/target/
 src-tauri/gen/
+my-key.jks
+keystore.txt
+app-final.apk
+app-final.apk.idsig
+app-signed.apk
+keygen-private.md

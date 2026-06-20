@@ -13,6 +13,7 @@ Built with Three.js and Tauri.
 <p align="center">
   <img src="demo/screenshot-1.png" width="800" alt="Galaxy view" />
 </p>
+
 ---
 
 ## Data schema
@@ -29,35 +30,80 @@ Built with Three.js and Tauri.
 
 ## Setup
 
-### 1. Install packages
+### Prerequisites
+
+- [Node.js](https://nodejs.org/)
+- [Rust](https://rustup.rs/)
+- [Tauri prerequisites for your platform](https://tauri.app/start/prerequisites/)
+- For Android builds: Android Studio + NDK (see below)
+
+### 1. Clone the repo
+
+```bash
+git clone <repo-url>
+cd asterion
+```
+
+### 2. Install packages
+
 ```bash
 npm install
 ```
 
-### 2. Run in dev mode
+### 3. Run in dev mode
+
 ```bash
 npx tauri dev
 ```
 
-### 3. Build the executable
+### 4. Build the desktop executable
+
 ```bash
 npx tauri build
 ```
 
-### 4. Locate your build
+**Output locations:**
+
 ```
 src-tauri\target\release\asterion.exe
-```
-Installers (`.msi` / `.exe`) are generated alongside, in:
-```
-src-tauri\target\release\bundle\
+src-tauri\target\release\bundle\       ← .msi / .exe installers
 ```
 
+> **Note:** `src-tauri/target/` is not tracked in git. You must build locally.
+
+---
+
+## Android Setup (first time only)
+
+The `src-tauri/gen/` folder is not tracked in git. New developers must generate it before building for Android.
+
+### 1. Initialize the Android project
+
+```bash
+npx tauri android init
+```
+
+When prompted about installing the Android Studio command line tools, type **y** to install the NDK automatically.
+
+### 2. Build the APK
+
+```bash
+npx tauri android build
+```
+
+**Output location:**
+
+```
+src-tauri/gen/android/app/build/outputs/apk/
+```
+
+**PLEASE follow Keygen-Tutorial.md for installation**
 ---
 
 ## Maintenance
 
 Remove all build cache and previous installers:
+
 ```powershell
 Remove-Item -Recurse -Force src-tauri\target
 ```

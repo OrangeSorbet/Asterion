@@ -1,10 +1,11 @@
+use tauri::Manager;
+
 #[tauri::command]
-fn theory_json_path() -> String {
-  let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-  let path = manifest_dir.join("..").join("theory.json");
-  let canonical = std::fs::canonicalize(&path).unwrap_or(path);
-  let s = canonical.to_string_lossy().to_string();
-  s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
+fn theory_json_path(app: tauri::AppHandle) -> Result<String, String> {
+  let path = app.path().resource_dir()
+    .map_err(|e| e.to_string())?
+    .join("theory.json");
+  Ok(path.to_string_lossy().to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
