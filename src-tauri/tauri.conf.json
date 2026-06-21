@@ -25,7 +25,8 @@
   "bundle": {
     "active": true,
     "resources": {
-      "../theory.json": "theory.json"
+      "../theory.json": "theory.json",
+      "../settings.json": "settings.json"
     },
     "targets": "all",
     "icon": [

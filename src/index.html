@@ -51,6 +51,12 @@
         <input type="range" id="speed-slider" min="0" max="5" step="0.1" value="1" />
         <span id="speed-val">0.1×</span>
       </div>
+      <button id="settings-btn" title="Settings" aria-label="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -87,16 +93,286 @@
     </div>
   </div>
 
-  <!-- Legend -->
+  <!-- Legend pill (collapsed) -->
+  <div id="legend-pill">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span>Legend</span>
+  </div>
+
+  <!-- Legend expanded -->
   <div id="legend">
+    <div class="legend-header">
+      <span>Legend</span>
+    </div>
     <div class="legend-item"><span class="legend-dot" style="background:#fff;box-shadow:0 0 8px #fff"></span>Concept/Asteroid</div>
     <div class="legend-item"><span class="legend-dot" style="background:#b0c4ff;box-shadow:0 0 8px #b0c4ff"></span>Subtopic/Moon</div>
     <div class="legend-item"><span class="legend-dot" style="background:#7ec8e3;box-shadow:0 0 12px #7ec8e3"></span>Chapter/Planet</div>
     <div class="legend-item"><span class="legend-dot" style="background:#ffd700;box-shadow:0 0 14px #ffd700"></span>Subject/Sun</div>
     <div class="legend-item"><span class="legend-dot" style="background:#ff6a00;box-shadow:0 0 18px #ff6a00"></span>Domain/Supercluster</div>
-    <div class="legend-item"><span class="legend-dot" style="background:#000;box-shadow:0 0 24px #9b59b6,0 0 48px #6c3483"></span>CS Core/Black Hole</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#000;box-shadow:0 0 24px #9b59b6,0 0 48px #6c3483"></span>Core/Black Hole</div>
     <div class="legend-item"><span class="legend-dot completed-dot"></span>Completed</div>
   </div>
+
+  <!-- Controls overlay (shown for 3s on load) -->
+  <div id="controls-overlay">
+    <div id="controls-inner">
+      <div class="controls-title">Controls</div>
+      <ul class="controls-list">
+        <li><span class="ctrl-key">Drag</span> Orbit camera around scene</li>
+        <li><span class="ctrl-key">Scroll</span> Zoom in / out</li>
+        <li><span class="ctrl-key">Click</span> Open node info panel</li>
+        <li><span class="ctrl-key">Checkbox</span> Mark topic complete</li>
+        <li><span class="ctrl-key">Search</span> Find any topic instantly</li>
+        <li><span class="ctrl-key">Speed</span> Control orbit animation speed</li>
+        <li><span class="ctrl-key">Tree</span> View curriculum as radial map</li>
+      </ul>
+      <div class="controls-title" style="margin-top:14px;">What am I looking at?</div>
+      <ul class="controls-list">
+        <li>⚫ Black hole = root of all knowledge</li>
+        <li>🔆 Large colored stars = domains</li>
+        <li>✨ Small stars = subjects</li>
+        <li>🌍 Planets = chapters</li>
+        <li>🌙 Moons = subtopics</li>
+        <li>🪨 Asteroids = individual concepts</li>
+        <li>🟡 Gold = completed items</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <aside id="settings-panel" class="settings-closed">
+    <div id="settings-header">
+      <button id="settings-back" aria-label="Back" style="display:none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <span id="settings-title">Settings</span>
+      <button id="settings-close" aria-label="Close settings">✕</button>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="settings-main-menu" class="settings-page active">
+      <div class="settings-menu-item" data-page="graphics">
+        <div class="settings-menu-left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span>Graphics</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="settings-menu-item" data-page="texture">
+        <div class="settings-menu-left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span>Textures</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="settings-menu-item" data-page="controls">
+        <div class="settings-menu-left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          <span>Controls</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+      <div class="settings-menu-item" data-page="about">
+        <div class="settings-menu-left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>About</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </div>
+
+    <!-- Graphics Page -->
+    <div id="settings-page-graphics" class="settings-page">
+      <div id="settings-body">
+
+        <div class="settings-section">
+          <div class="settings-section-title">Preset</div>
+          <div class="preset-grid">
+            <button class="preset-btn" data-preset="lowest">Lowest</button>
+            <button class="preset-btn" data-preset="low">Low</button>
+            <button class="preset-btn" data-preset="medium">Medium</button>
+            <button class="preset-btn" data-preset="high">High</button>
+            <button class="preset-btn" data-preset="ultra" style="grid-column:1/-1;">Ultra</button>
+          </div>
+          <button id="settings-reset">Reset to Default</button>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Quality</div>
+          <div class="setting-row"><label>Bloom Strength<span class="setting-val" id="val-bloomStrength"></span></label><input type="range" min="0" max="0.8" step="0.01" data-setting="bloomStrength"/></div>
+          <div class="setting-row"><label>Bloom Radius<span class="setting-val" id="val-bloomRadius"></span></label><input type="range" min="0" max="0.8" step="0.01" data-setting="bloomRadius"/></div>
+          <div class="setting-row"><label>Bloom Threshold<span class="setting-val" id="val-bloomThreshold"></span></label><input type="range" min="0.5" max="1" step="0.01" data-setting="bloomThreshold"/></div>
+          <div class="setting-row"><label>FXAA<span class="setting-val" id="val-fxaa"></span></label><input type="range" min="0" max="1" step="1" data-setting="fxaa"/></div>
+          <div class="setting-row"><label>Pixel Ratio<span class="setting-val" id="val-pixelRatio"></span></label><input type="range" min="0.5" max="2" step="0.25" data-setting="pixelRatio"/></div>
+          <div class="setting-row"><label>Motion Blur<span class="setting-val" id="val-motionBlur"></span></label><input type="range" min="0" max="0.95" step="0.01" data-setting="motionBlur"/></div>
+          <div class="setting-row"><label>Tone Exposure<span class="setting-val" id="val-toneExposure"></span></label><input type="range" min="0.5" max="2" step="0.05" data-setting="toneExposure"/></div>
+          <div class="setting-row"><label>Fog Density<span class="setting-val" id="val-fogDensity"></span></label><input type="range" min="0" max="0.0003" step="0.000005" data-setting="fogDensity"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Black Hole</div>
+          <div class="setting-row"><label>Core Size<span class="setting-val" id="val-bhCoreRadius"></span></label><input type="range" min="5" max="50" step="0.5" data-setting="bhCoreRadius"/></div>
+          <div class="setting-row"><label>Lens Strength<span class="setting-val" id="val-bhLensStrength"></span></label><input type="range" min="0" max="0.15" step="0.001" data-setting="bhLensStrength"/></div>
+          <div class="setting-row"><label>Disk Inner Radius<span class="setting-val" id="val-bhDiskInner"></span></label><input type="range" min="10" max="60" step="1" data-setting="bhDiskInner"/></div>
+          <div class="setting-row"><label>Disk Outer Radius<span class="setting-val" id="val-bhDiskOuter"></span></label><input type="range" min="60" max="400" step="5" data-setting="bhDiskOuter"/></div>
+          <div class="setting-row"><label>Disk Opacity<span class="setting-val" id="val-diskOpacity"></span></label><input type="range" min="0" max="0.3" step="0.005" data-setting="diskOpacity"/></div>
+          <div class="setting-row"><label>Disk Speed<span class="setting-val" id="val-diskSpeed"></span></label><input type="range" min="0" max="3" step="0.05" data-setting="diskSpeed"/></div>
+          <div class="setting-row"><label>Disk Color Temp<span class="setting-val" id="val-diskColorTemp"></span></label><input type="range" min="0" max="1" step="0.01" data-setting="diskColorTemp"/></div>
+          <div class="setting-row"><label>Disk Volume Layers<span class="setting-val" id="val-diskVolumeLayers"></span></label><input type="range" min="1" max="7" step="1" data-setting="diskVolumeLayers"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Stars &amp; Suns</div>
+          <div class="setting-row"><label>Domain Star Size<span class="setting-val" id="val-sunSizeBase"></span></label><input type="range" min="3" max="20" step="0.5" data-setting="sunSizeBase"/></div>
+          <div class="setting-row"><label>Domain Corona Size<span class="setting-val" id="val-domainCoronaSize"></span></label><input type="range" min="1" max="10" step="0.1" data-setting="domainCoronaSize"/></div>
+          <div class="setting-row"><label>Subject Star Size<span class="setting-val" id="val-subjectSunSize"></span></label><input type="range" min="1" max="12" step="0.5" data-setting="subjectSunSize"/></div>
+          <div class="setting-row"><label>Subject Corona Size<span class="setting-val" id="val-subjectCoronaSize"></span></label><input type="range" min="1" max="10" step="0.1" data-setting="subjectCoronaSize"/></div>
+          <div class="setting-row"><label>Sun Emissive<span class="setting-val" id="val-sunEmissiveIntensity"></span></label><input type="range" min="0" max="5" step="0.1" data-setting="sunEmissiveIntensity"/></div>
+          <div class="setting-row"><label>Sun Light Range<span class="setting-val" id="val-sunLightRange"></span></label><input type="range" min="50" max="600" step="10" data-setting="sunLightRange"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Planets</div>
+          <div class="setting-row"><label>Planet Size<span class="setting-val" id="val-planetSize"></span></label><input type="range" min="0.5" max="8" step="0.1" data-setting="planetSize"/></div>
+          <div class="setting-row"><label>Atmosphere Opacity<span class="setting-val" id="val-atmosphereOpacity"></span></label><input type="range" min="0" max="0.6" step="0.01" data-setting="atmosphereOpacity"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Moons</div>
+          <div class="setting-row"><label>Moon Size<span class="setting-val" id="val-moonSize"></span></label><input type="range" min="0.2" max="4" step="0.1" data-setting="moonSize"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Asteroids</div>
+          <div class="setting-row"><label>Asteroid Size<span class="setting-val" id="val-asteroidSize"></span></label><input type="range" min="0.1" max="1.5" step="0.05" data-setting="asteroidSize"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Spacing</div>
+          <div class="setting-row"><label>Domain 1st Orbit<span class="setting-val" id="val-domainRadiusBase"></span></label><input type="range" min="80" max="400" step="5" data-setting="domainRadiusBase"/></div>
+          <div class="setting-row"><label>Domain Inter-Orbit<span class="setting-val" id="val-domainRadiusStepUser"></span></label><input type="range" min="2" max="60" step="1" data-setting="domainRadiusStepUser"/></div>
+          <div class="setting-row"><label>Subject 1st Orbit<span class="setting-val" id="val-subjectRadiusBase"></span></label><input type="range" min="10" max="80" step="1" data-setting="subjectRadiusBase"/></div>
+          <div class="setting-row"><label>Subject Inter-Orbit<span class="setting-val" id="val-subjectRadiusStepUser"></span></label><input type="range" min="2" max="40" step="0.5" data-setting="subjectRadiusStepUser"/></div>
+          <div class="setting-row"><label>Chapter 1st Orbit<span class="setting-val" id="val-chapterRadiusBase"></span></label><input type="range" min="5" max="40" step="0.5" data-setting="chapterRadiusBase"/></div>
+          <div class="setting-row"><label>Chapter Inter-Orbit<span class="setting-val" id="val-chapterRadiusStepUser"></span></label><input type="range" min="1" max="20" step="0.5" data-setting="chapterRadiusStepUser"/></div>
+          <div class="setting-row"><label>Subtopic 1st Orbit<span class="setting-val" id="val-subtopicRadiusBase"></span></label><input type="range" min="2" max="20" step="0.5" data-setting="subtopicRadiusBase"/></div>
+          <div class="setting-row"><label>Subtopic Inter-Orbit<span class="setting-val" id="val-subtopicRadiusStepUser"></span></label><input type="range" min="0.5" max="10" step="0.2" data-setting="subtopicRadiusStepUser"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Background</div>
+          <div class="setting-row"><label>Nebula Opacity<span class="setting-val" id="val-nebulaOpacity"></span></label><input type="range" min="0" max="0.4" step="0.005" data-setting="nebulaOpacity"/></div>
+          <div class="setting-row"><label>Nebula Saturation<span class="setting-val" id="val-nebulaSaturation"></span></label><input type="range" min="0" max="2" step="0.05" data-setting="nebulaSaturation"/></div>
+          <div class="setting-row"><label>Nebula Brightness<span class="setting-val" id="val-nebulaBrightness"></span></label><input type="range" min="0" max="3" step="0.05" data-setting="nebulaBrightness"/></div>
+          <div class="setting-row"><label>Star Brightness<span class="setting-val" id="val-starBrightness"></span></label><input type="range" min="0" max="2" step="0.05" data-setting="starBrightness"/></div>
+          <div class="setting-row"><label>Star Size<span class="setting-val" id="val-starSize"></span></label><input type="range" min="0.5" max="4" step="0.1" data-setting="starSize"/></div>
+          <div class="setting-row"><label>Galaxy Count<span class="setting-val" id="val-galaxyCount"></span></label><input type="range" min="0" max="100" step="1" data-setting="galaxyCount"/></div>
+          <div class="setting-row"><label>Galaxy Size<span class="setting-val" id="val-galaxySize"></span></label><input type="range" min="100" max="1000" step="10" data-setting="galaxySize"/></div>
+          <button id="background-rebuild" style="width:100%;margin-top:6px;padding:8px;background:rgba(79,140,255,0.12);border:1px solid rgba(79,140,255,0.3);color:#4f8cff;border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.8rem;">Rebuild Background</button>
+        </div>
+
+      </div>
+    </div>
+    
+    <!-- Texture Page -->
+    <div id="settings-page-texture" class="settings-page">
+      <div id="texture-body" style="padding:12px 20px 32px;display:flex;flex-direction:column;gap:4px;">
+
+        <div class="settings-section">
+          <div class="settings-section-title">Domain Stars</div>
+          <div class="setting-row"><label>FBM Octaves<span class="setting-val" id="val-tex-domainOctaves"></span></label><input type="range" min="1" max="8" step="1" data-tex="domainOctaves"/></div>
+          <div class="setting-row"><label>Frequency<span class="setting-val" id="val-tex-domainFreq"></span></label><input type="range" min="1" max="12" step="0.5" data-tex="domainFreq"/></div>
+          <div class="setting-row"><label>Granulation<span class="setting-val" id="val-tex-domainGranulation"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="domainGranulation"/></div>
+          <div class="setting-row"><label>Spot Count<span class="setting-val" id="val-tex-domainSpotCount"></span></label><input type="range" min="0" max="10" step="1" data-tex="domainSpotCount"/></div>
+          <div class="setting-row"><label>Spot Size<span class="setting-val" id="val-tex-domainSpotSize"></span></label><input type="range" min="0.01" max="0.2" step="0.005" data-tex="domainSpotSize"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Subject Stars</div>
+          <div class="setting-row"><label>FBM Octaves<span class="setting-val" id="val-tex-subjectOctaves"></span></label><input type="range" min="1" max="8" step="1" data-tex="subjectOctaves"/></div>
+          <div class="setting-row"><label>Frequency<span class="setting-val" id="val-tex-subjectFreq"></span></label><input type="range" min="1" max="12" step="0.5" data-tex="subjectFreq"/></div>
+          <div class="setting-row"><label>Granulation<span class="setting-val" id="val-tex-subjectGranulation"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="subjectGranulation"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Planets</div>
+          <div class="setting-row"><label>Continent Scale<span class="setting-val" id="val-tex-planetContinent"></span></label><input type="range" min="0.5" max="6" step="0.1" data-tex="planetContinent"/></div>
+          <div class="setting-row"><label>Detail Scale<span class="setting-val" id="val-tex-planetDetail"></span></label><input type="range" min="1" max="20" step="0.5" data-tex="planetDetail"/></div>
+          <div class="setting-row"><label>Cloud Amount<span class="setting-val" id="val-tex-planetCloud"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="planetCloud"/></div>
+          <div class="setting-row"><label>Bump Strength<span class="setting-val" id="val-tex-planetBump"></span></label><input type="range" min="0" max="2" step="0.05" data-tex="planetBump"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Moons</div>
+          <div class="setting-row"><label>Crater Count<span class="setting-val" id="val-tex-moonCraters"></span></label><input type="range" min="0" max="12" step="1" data-tex="moonCraters"/></div>
+          <div class="setting-row"><label>Crater Size<span class="setting-val" id="val-tex-moonCraterSize"></span></label><input type="range" min="0.01" max="0.2" step="0.005" data-tex="moonCraterSize"/></div>
+          <div class="setting-row"><label>Base Roughness<span class="setting-val" id="val-tex-moonRoughness"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="moonRoughness"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Asteroids</div>
+          <div class="setting-row"><label>Bump Scale<span class="setting-val" id="val-tex-asteroidBump"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="asteroidBump"/></div>
+          <div class="setting-row"><label>Roughness<span class="setting-val" id="val-tex-asteroidRoughness"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="asteroidRoughness"/></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Accretion Disk</div>
+          <div class="setting-row"><label>Turbulence Scale<span class="setting-val" id="val-tex-diskTurb"></span></label><input type="range" min="0.01" max="0.3" step="0.005" data-tex="diskTurb"/></div>
+          <div class="setting-row"><label>Filament Strength<span class="setting-val" id="val-tex-diskFilament"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="diskFilament"/></div>
+          <div class="setting-row"><label>Inner Glow<span class="setting-val" id="val-tex-diskInnerGlow"></span></label><input type="range" min="0" max="1" step="0.01" data-tex="diskInnerGlow"/></div>
+        </div>
+
+        <div class="settings-section">
+          <button id="texture-regenerate" style="width:100%;padding:8px;background:rgba(79,140,255,0.12);border:1px solid rgba(79,140,255,0.3);color:#4f8cff;border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.8rem;">Regenerate All Textures</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Controls Page -->
+    <div id="settings-page-controls" class="settings-page">
+      <div style="padding:16px 20px;">
+        <div class="settings-section-title">Camera</div>
+        <ul class="controls-list" style="margin-bottom:16px;">
+          <li><span class="ctrl-key">Drag</span> Orbit camera around scene</li>
+          <li><span class="ctrl-key">Scroll</span> Zoom in / out</li>
+          <li><span class="ctrl-key">Two finger</span> Pinch zoom (mobile)</li>
+        </ul>
+        <div class="settings-section-title">Interaction</div>
+        <ul class="controls-list" style="margin-bottom:16px;">
+          <li><span class="ctrl-key">Click</span> Open node info panel</li>
+          <li><span class="ctrl-key">Checkbox</span> Mark topic complete</li>
+          <li><span class="ctrl-key">Search</span> Find any topic instantly</li>
+          <li><span class="ctrl-key">Speed</span> Control orbit animation speed</li>
+          <li><span class="ctrl-key">Tree</span> View curriculum as radial map</li>
+        </ul>
+        <div class="settings-section-title">What am I looking at?</div>
+        <ul class="controls-list">
+          <li>⚫ Black hole = root of all knowledge</li>
+          <li>🔆 Large colored stars = domains</li>
+          <li>✨ Small stars = subjects within domains</li>
+          <li>🌍 Planets = chapters within subjects</li>
+          <li>🌙 Moons = subtopics within chapters</li>
+          <li>🪨 Asteroids = individual concepts</li>
+          <li>🟡 Gold highlight = completed items</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- About Page -->
+    <div id="settings-page-about" class="settings-page">
+      <div style="padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;">
+        <div style="width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd700,#b8860b);box-shadow:0 0 24px rgba(255,215,0,0.4);"></div>
+        <div>
+          <div style="font-size:1.2rem;font-weight:700;color:#fff;margin-bottom:4px;">Asterion</div>
+          <div style="font-size:0.75rem;color:var(--text-dim);">v0.1.0</div>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-dim);line-height:1.6;max-width:240px;">An immersive 3D space learning visualizer. Navigate your knowledge galaxy, track your progress, and explore concepts across domains.</p>
+        <div style="width:100%;border-top:1px solid var(--panel-border);padding-top:16px;font-size:0.75rem;color:var(--text-dim);">Built with Three.js + Tauri</div>
+      </div>
+    </div>
+
+  </aside>
 
   <script type="module" src="index.js"></script>
 </body>

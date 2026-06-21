@@ -54,45 +54,85 @@ function findJsonNode(userData) {
 }
 
 // ─── UNIVERSAL TWEAK CONFIG ─────────────────────────────────────
-// !! TWEAK THESE FREELY !!
 const CONFIG = {
-  // --- Orbit spacing ---
-  domainRadiusBase: 200,        // how far domains orbit black hole
-  domainRadiusStep: 14,         // spacing between domain orbits
-  subjectRadiusBase: 34,        // subject orbit around domain
+  domainRadiusBase: 200,
+  domainRadiusStep: 14,
+  subjectRadiusBase: 34,
   subjectRadiusStep: 11,
-  chapterRadiusBase: 14,        // chapter orbit around subject
+  chapterRadiusBase: 14,
   chapterRadiusStep: 5,
-  subtopicRadiusBase: 7,        // subtopic orbit around chapter
+  subtopicRadiusBase: 7,
   subtopicRadiusStep: 2.8,
-  conceptRadiusBase: 2.8,       // concept orbit around subtopic
+  conceptRadiusBase: 2.8,
   conceptRadiusStep: 1.0,
 
-  // --- Object sizes ---
-  sunSizeBase: 9,               // domain star size
-  subjectSunSize: 5,            // subject star size
-  planetSize: 3.2,              // chapter planet size
-  moonSize: 1.1,                // subtopic moon size
-  asteroidSize: 0.38,           // concept asteroid size
+  domainRadiusStepUser: 14,
+  subjectRadiusStepUser: 11,
+  chapterRadiusStepUser: 5,
+  subtopicRadiusStepUser: 2.8,
 
-  // --- Black hole ---
-  bhCoreRadius: 19,             // black hole sphere radius
-  bhDiskInner: 26,              // accretion disk inner edge
-  bhDiskOuter: 200,             // accretion disk outer edge
-  bhLensStrength: 0.045,        // gravitational lensing warp strength
-  bhLensRadius: 0.07,           // lensing effect screen radius
+  sunSizeBase: 9,
+  domainCoronaSize: 5.5,
+  subjectSunSize: 5,
+  subjectCoronaSize: 5.0,
+  planetSize: 3.2,
+  moonSize: 1.1,
+  asteroidSize: 0.38,
 
-  // --- Post processing ---
-  bloomStrength: 0.1,           // bloom intensity
-  bloomRadius: 0.1,             // bloom spread
-  bloomThreshold: 0.95,         // what luminance triggers bloom
-  motionBlur: 0.5,             // afterimage dampening (0=none, 0.95=heavy)
+  bhCoreRadius: 19,
+  bhDiskInner: 26,
+  bhDiskOuter: 200,
+  bhLensStrength: 0.045,
+  bhLensRadius: 0.07,
+  diskOpacity: 0.08,
+  diskSpeed: 1.0,
+  diskColorTemp: 0.5,
+  diskVolumeLayers: 6,
 
-  // --- Visuals ---
-  fogDensity: 0.00008,          // scene fog density
-  sunEmissiveIntensity: 1.6,    // sun glow intensity
-  sunLightIntensity: 2.2,       // sun point light intensity
-  sunLightRange: 280,           // sun point light range
+  bloomStrength: 0.0,
+  bloomRadius: 0.6,
+  bloomThreshold: 1.0,
+  motionBlur: 0.0,
+  fxaa: 0,
+  pixelRatio: Math.min(window.devicePixelRatio, 2),
+
+  fogDensity: 0.00008,
+  sunEmissiveIntensity: 0.15,
+  sunLightIntensity: 2.2,
+  sunLightRange: 280,
+  atmosphereOpacity: 0.18,
+
+  nebulaOpacity: 0.01,
+  nebulaSaturation: 1.0,
+  nebulaBrightness: 1.0,
+  starBrightness: 1.0,
+  starSize: 1.8,
+  galaxyCount: 55,
+  galaxySize: 400,
+
+  // texture params
+  tex: {
+    domainOctaves: 6,
+    domainFreq: 4,
+    domainGranulation: 0.12,
+    domainSpotCount: 4,
+    domainSpotSize: 0.09,
+    subjectOctaves: 5,
+    subjectFreq: 4,
+    subjectGranulation: 0.10,
+    planetContinent: 2.2,
+    planetDetail: 7,
+    planetCloud: 0.5,
+    planetBump: 0.55,
+    moonCraters: 5,
+    moonCraterSize: 0.1,
+    moonRoughness: 0.92,
+    asteroidBump: 0.3,
+    asteroidRoughness: 0.98,
+    diskTurb: 0.05,
+    diskFilament: 0.4,
+    diskInnerGlow: 0.35,
+  }
 };
 
 // ─── State ────────────────────────────────────────────────────
@@ -258,8 +298,12 @@ const lensShader = {
       vec2 dir = normalize(diff + 0.000001);
       dir.x /= aspect;
 
-      if (dist < bhRadius * 1.02) {
+      if (dist < bhRadius * 0.98) {
         gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+      }
+      if (dist > bhRadius * 2.8) {
+        gl_FragColor = texture2D(tDiffuse, uv);
         return;
       }
 
@@ -281,7 +325,7 @@ const lensShader = {
 };
 
 const accretionDiskShader = {
-  uniforms: { uTime: { value: 0 }, uInner: { value: 26.0 }, uOuter: { value: 160.0 } },
+  uniforms: { uTime: { value: 0 }, uInner: { value: 26.0 }, uOuter: { value: 160.0 }, uColorTemp: { value: 0.5 }, uTurbScale: { value: 0.05 }, uFilament: { value: 0.4 }, uInnerGlow: { value: 0.35 }, uOpacityMult: { value: 1.0 } },
   vertexShader: `
     varying vec2 vPos;
     void main() {
@@ -290,7 +334,7 @@ const accretionDiskShader = {
     }
   `,
   fragmentShader: `
-    uniform float uTime; uniform float uInner; uniform float uOuter;
+    uniform float uTime; uniform float uInner; uniform float uOuter; uniform float uColorTemp; uniform float uTurbScale; uniform float uFilament; uniform float uInnerGlow; uniform float uOpacityMult;
     varying vec2 vPos;
     float hash(float n) { return fract(sin(n) * 43758.5453123); }
     float noise(vec2 p) {
@@ -321,8 +365,8 @@ const accretionDiskShader = {
       vec2 rp = rotate(vPos, shear);
 
       // multi octave turbulence
-      float turb = fbm(rp * 0.05 + uTime * 0.01);
-      float turb2 = fbm(rp * 0.12 - uTime * 0.008 + 7.3);
+      float turb = fbm(rp * uTurbScale + uTime * 0.01);
+      float turb2 = fbm(rp * uTurbScale * 2.4 - uTime * 0.008 + 7.3);
       float combined = turb * 0.65 + turb2 * 0.35;
 
       // bright filaments — stretched along rotation
@@ -330,7 +374,7 @@ const accretionDiskShader = {
       float filament = pow(fbm(rp2 * vec2(0.03, 0.18) + uTime * 0.012), 1.8);
 
       float edgeFade = smoothstep(0.0, 0.08, t) * smoothstep(1.0, 0.55, t);
-      float innerGlow = smoothstep(0.35, 0.0, t); // extra hot near black hole
+      float innerGlow = smoothstep(0.35, 0.0, t) * uInnerGlow * 2.857; // extra hot near black hole
 
       float heat = 1.0 - t;
 
@@ -346,7 +390,7 @@ const accretionDiskShader = {
       color = mix(color, hot, smoothstep(0.45, 0.75, heat));
       color = mix(color, white, smoothstep(0.7, 1.0, heat) * innerGlow * 1.5);
 
-      color += filament * vec3(1.0, 0.7, 0.3) * 0.4;
+      color += filament * mix(vec3(1.0, 0.7, 0.3), vec3(0.3, 0.7, 1.0), uColorTemp) * uFilament;
 
       // doppler beaming — left side rotating toward viewer = brighter
       float doppler = 0.5 + 0.5 * sin(atan(vPos.y, vPos.x));
@@ -355,6 +399,7 @@ const accretionDiskShader = {
       float alpha = edgeFade * (0.12 + combined * 0.08);
       alpha += innerGlow * 0.04;
       alpha *= (0.4 + doppler * 0.6);
+      alpha *= uOpacityMult;
 
       gl_FragColor = vec4(color * (0.5 + combined * 0.3 + filament * 0.2) * dopplerBoost, alpha);
     }
@@ -381,6 +426,41 @@ composer.addPass(bloomPass);
 
 const afterimagePass = new THREE.AfterimagePass(CONFIG.motionBlur);
 composer.addPass(afterimagePass);
+
+// FXAA
+const fxaaPass = new THREE.ShaderPass({
+  uniforms: {
+    tDiffuse: { value: null },
+    resolution: { value: new THREE.Vector2(1/window.innerWidth, 1/window.innerHeight) }
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform vec2 resolution;
+    varying vec2 vUv;
+    void main(){
+      vec3 rgbNW=texture2D(tDiffuse,vUv+vec2(-1.0,-1.0)*resolution).rgb;
+      vec3 rgbNE=texture2D(tDiffuse,vUv+vec2(1.0,-1.0)*resolution).rgb;
+      vec3 rgbSW=texture2D(tDiffuse,vUv+vec2(-1.0,1.0)*resolution).rgb;
+      vec3 rgbSE=texture2D(tDiffuse,vUv+vec2(1.0,1.0)*resolution).rgb;
+      vec3 rgbM=texture2D(tDiffuse,vUv).rgb;
+      vec3 luma=vec3(0.299,0.587,0.114);
+      float lumaNW=dot(rgbNW,luma),lumaNE=dot(rgbNE,luma),lumaSW=dot(rgbSW,luma),lumaSE=dot(rgbSE,luma),lumaM=dot(rgbM,luma);
+      float lumaMin=min(lumaM,min(min(lumaNW,lumaNE),min(lumaSW,lumaSE)));
+      float lumaMax=max(lumaM,max(max(lumaNW,lumaNE),max(lumaSW,lumaSE)));
+      vec2 dir=vec2(-((lumaNW+lumaNE)-(lumaSW+lumaSE)),(lumaNW+lumaSW)-(lumaNE+lumaSE));
+      float dirReduce=max((lumaNW+lumaNE+lumaSW+lumaSE)*0.03125,0.0078125);
+      float rcpDirMin=1.0/(min(abs(dir.x),abs(dir.y))+dirReduce);
+      dir=min(vec2(8.0),max(vec2(-8.0),dir*rcpDirMin))*resolution;
+      vec3 rgbA=0.5*(texture2D(tDiffuse,vUv+dir*(1.0/3.0-0.5)).rgb+texture2D(tDiffuse,vUv+dir*(2.0/3.0-0.5)).rgb);
+      vec3 rgbB=rgbA*0.5+0.25*(texture2D(tDiffuse,vUv+dir*-0.5).rgb+texture2D(tDiffuse,vUv+dir*0.5).rgb);
+      float lumaB=dot(rgbB,luma);
+      gl_FragColor=vec4((lumaB<lumaMin||lumaB>lumaMax)?rgbA:rgbB,1.0);
+    }
+  `
+});
+fxaaPass.enabled = CONFIG.fxaa > 0;
+composer.addPass(fxaaPass);
 
 const lensPass = new THREE.ShaderPass(new THREE.ShaderMaterial(lensShader), 'tDiffuse');
 lensPass.renderToScreen = true;
@@ -454,12 +534,13 @@ function makeGalaxyTexture(size = 128) {
 
 function buildDistantGalaxies() {
   const tex = makeGalaxyTexture(128);
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 55; i++) {
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.3 + Math.random() * 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
     const sprite = new THREE.Sprite(mat);
+    sprite.userData.isBackground = true;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(Math.random() * 2 - 1);
-    const r = 5000 + Math.random() * 4000;
+    const r = 4000 + Math.random() * 12000;
     sprite.position.set(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta) * 0.6, r * Math.cos(phi));
     const s = 300 + Math.random() * 500;
     sprite.scale.set(s, s * 0.6, 1);
@@ -480,6 +561,59 @@ function makeStarGlowTexture(color, size = 64) {
   });
 }
 
+function makeFlareTexture(color, size = 128) {
+  return makeProceduralTexture(size, (ctx, sz) => {
+    const cx = sz / 2, cy = sz / 2;
+    ctx.clearRect(0, 0, sz, sz);
+    // core glow
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, sz * 0.22);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.3, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, sz * 0.22, 0, Math.PI * 2); ctx.fill();
+    // spike rays
+    const spikes = 8;
+    for (let s = 0; s < spikes; s++) {
+      const angle = (s / spikes) * Math.PI * 2;
+      const len = s % 2 === 0 ? sz * 0.48 : sz * 0.28;
+      const width = s % 2 === 0 ? sz * 0.022 : sz * 0.012;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      const spikeGrad = ctx.createLinearGradient(0, 0, len, 0);
+      spikeGrad.addColorStop(0, 'rgba(255,255,255,0.9)');
+      spikeGrad.addColorStop(0.4, color.replace('1.0', '0.6'));
+      spikeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = spikeGrad;
+      ctx.beginPath();
+      ctx.moveTo(0, -width);
+      ctx.lineTo(len, 0);
+      ctx.lineTo(0, width);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  });
+}
+
+const flareMeshes = []; // {sprite, baseMesh, rotSpeed, pulseOffset}
+
+function addFlaresToSun(mesh, color, size) {
+  const colorStr = `rgba(${Math.round(color.r*255)},${Math.round(color.g*255)},${Math.round(color.b*255)},1.0)`;
+  const tex = makeFlareTexture(colorStr, 128);
+  const mat = new THREE.SpriteMaterial({
+    map: tex, transparent: true,
+    opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const sprite = new THREE.Sprite(mat);
+  const s = size * 2.5;
+  sprite.scale.set(s, s, 1);
+  mesh.add(sprite);
+  flareMeshes.push({ sprite, baseMesh: mesh, rotSpeed: 0.15 + Math.random() * 0.2, pulseOffset: Math.random() * Math.PI * 2, baseSize: s });
+  return sprite;
+}
+
 function buildSupernovae() {
   const snColors = ['rgba(255,160,200,0.9)', 'rgba(160,200,255,0.9)', 'rgba(255,210,140,0.9)', 'rgba(180,255,210,0.9)', 'rgba(255,140,140,0.9)', 'rgba(210,160,255,0.9)'];
   for (let i = 0; i < 16; i++) {
@@ -487,6 +621,7 @@ function buildSupernovae() {
     const tex = makeStarGlowTexture(color, 96);
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.5 + Math.random() * 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
     const sprite = new THREE.Sprite(mat);
+    sprite.userData.isBackground = true;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(Math.random() * 2 - 1);
     const r = 3000 + Math.random() * 6000;
@@ -499,6 +634,7 @@ function buildSupernovae() {
     const coreTex = makeStarGlowTexture('rgba(255,255,255,1)', 32);
     const coreMat = new THREE.SpriteMaterial({ map: coreTex, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
     const core = new THREE.Sprite(coreMat);
+    core.userData.isBackground = true;
     core.position.copy(sprite.position);
     const cs = s * 0.18;
     core.scale.set(cs, cs, 1);
@@ -513,6 +649,7 @@ function buildBrightStars() {
     const tex = makeStarGlowTexture(color, 64);
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     const sprite = new THREE.Sprite(mat);
+    sprite.userData.isBackground = true;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(Math.random() * 2 - 1);
     const r = 1500 + Math.random() * 6000;
@@ -906,28 +1043,40 @@ function buildStarfield() {
   const count = 12000;
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(count * 3);
-  const sizes = new Float32Array(count);
   const colors = new Float32Array(count * 3);
+  // 5 size buckets: tiny, small, medium, large, giant
+  // weighted so most stars are tiny/small, few are large/giant
+  const sizeBuckets = [0.4, 0.9, 1.6, 2.6, 4.0];
+  const bucketWeights = [0.45, 0.30, 0.15, 0.07, 0.03];
   const starColors = [
-    [1, 1, 1], [0.8, 0.9, 1], [1, 0.9, 0.7], [0.7, 0.8, 1], [1, 0.7, 0.6]
+    [1.0, 1.0, 1.0],      // white
+    [0.75, 0.85, 1.0],    // blue-white
+    [1.0, 0.92, 0.7],     // yellow-white
+    [0.65, 0.75, 1.0],    // blue
+    [1.0, 0.65, 0.5],     // orange
   ];
+  const starSizes = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(Math.random() * 2 - 1);
     const r = 3000 + Math.random() * 7000;
-    pos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+    pos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
     pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
     pos[i*3+2] = r * Math.cos(phi);
-    sizes[i] = Math.random() * 2.5 + 0.3;
-    const c = starColors[Math.floor(Math.random() * starColors.length)];
+    // pick bucket by weight
+    let rng = Math.random(), bucket = 0, acc = 0;
+    for (let b = 0; b < bucketWeights.length; b++) { acc += bucketWeights[b]; if (rng < acc) { bucket = b; break; } }
+    starSizes[i] = sizeBuckets[bucket] * CONFIG.starSize;
+    // bigger stars slightly bluer/whiter
+    const c = starColors[Math.min(bucket, starColors.length - 1)];
     colors[i*3] = c[0]; colors[i*3+1] = c[1]; colors[i*3+2] = c[2];
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const mat = new THREE.PointsMaterial({
-    size: 1.8, sizeAttenuation: true, vertexColors: true,
-    transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false
+    size: CONFIG.starSize, sizeAttenuation: true, vertexColors: true,
+    transparent: true, opacity: CONFIG.starBrightness,
+    blending: THREE.AdditiveBlending, depthWrite: false
   });
   scene.add(new THREE.Points(geo, mat));
 }
@@ -941,6 +1090,7 @@ const nebulaShader = {
   `,
   fragmentShader: `
     uniform vec3 uColorA; uniform vec3 uColorB; uniform float uSeed;
+    uniform float uSaturation; uniform float uBrightness; uniform float uOpacity;
     varying vec2 vUv;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7)) + uSeed) * 43758.5453); }
     float noise(vec2 p) {
@@ -963,11 +1113,16 @@ const nebulaShader = {
       float falloff = smoothstep(1.7, 0.0, d);
       float density = pow(cloud, 1.6) * falloff;
       vec3 color = mix(uColorA, uColorB, n2);
-      float alpha = density * 0.55;
+      float grey = dot(color, vec3(0.299, 0.587, 0.114));
+      color = mix(vec3(grey), color, uSaturation);
+      color *= uBrightness;
+      float alpha = density * 0.55 * uOpacity;
       gl_FragColor = vec4(color * (0.6 + cloud * 0.8), alpha);
     }
   `
 };
+
+const nebulaeMeshes = [];
 
 function buildNebulae() {
   const palettes = [
@@ -975,30 +1130,64 @@ function buildNebulae() {
     [0xff9933, 0x3399ff], [0xff3399, 0x33ff66], [0x33ccff, 0xffcc33],
     [0x9933ff, 0xff3333], [0x33ff99, 0xff33cc]
   ];
-  for (let n = 0; n < 10; n++) {
+
+  // spread nebulae everywhere in space including near background stars
+  const placements = [
+    // mid distance
+    ...Array(5).fill(0).map(() => ({
+      x: (Math.random()-0.5)*14000,
+      y: (Math.random()-0.5)*4000,
+      z: (Math.random()-0.5)*14000,
+      s: 1200 + Math.random() * 1500
+    })),
+    // far — near background stars
+    ...Array(8).fill(0).map(() => ({
+      x: (Math.random()-0.5)*28000,
+      y: (Math.random()-0.5)*10000,
+      z: (Math.random()-0.5)*28000,
+      s: 3000 + Math.random() * 4000
+    }))
+  ];
+
+  placements.forEach((p, n) => {
     const [colA, colB] = palettes[n % palettes.length];
-    const geo = new THREE.PlaneGeometry(1, 1);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uColorA: { value: new THREE.Color(colA) },
-        uColorB: { value: new THREE.Color(colB) },
-        uSeed: { value: Math.random() * 100 }
-      },
-      vertexShader: nebulaShader.vertexShader,
-      fragmentShader: nebulaShader.fragmentShader,
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    const cx = (Math.random()-0.5)*4000;
-    const cy = (Math.random()-0.5)*2000;
-    const cz = (Math.random()-0.5)*4000;
-    mesh.position.set(cx, cy, cz);
-    mesh.lookAt(0, 0, 0);
-    const s = 900 + Math.random() * 1400;
-    mesh.scale.set(s, s, 1);
-    mesh.rotation.z = Math.random() * Math.PI * 2;
-    scene.add(mesh);
-  }
+    // each nebula = 7 layered planes at slight angle offsets for volume
+    const layerCount = 7;
+    const group = [];
+    for (let li = 0; li < layerCount; li++) {
+      const mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uColorA: { value: new THREE.Color(colA) },
+            uColorB: { value: new THREE.Color(colB) },
+            uSeed: { value: Math.random() * 100 + li * 13.7 },
+            uOpacity: { value: 1.0 },
+            uSaturation: { value: 1.0 },
+            uBrightness: { value: 1.0 },
+          },
+        vertexShader: nebulaShader.vertexShader,
+        fragmentShader: nebulaShader.fragmentShader,
+        transparent: true, depthWrite: false, blending: THREE.NormalBlending, side: THREE.DoubleSide
+      });
+      const geo = new THREE.PlaneGeometry(1, 1);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(p.x, p.y, p.z);
+      // each layer rotated slightly different — gives volume
+      // force layers to never be edge-on — keep them mostly face-on to camera
+      mesh.rotation.x = (Math.random() - 0.5) * 0.6;
+      mesh.rotation.y = (Math.random() - 0.5) * 0.6;
+      mesh.rotation.z = Math.random() * Math.PI * 2;
+      mesh.rotation.z = Math.random() * Math.PI * 2;
+      mesh.userData.isBackground = true;
+      mesh.lookAt(camera.position);
+      mesh.rotateX((Math.random()-0.5) * 0.4);
+      mesh.rotateY((Math.random()-0.5) * 0.4);
+      const layerScale = p.s * (0.8 + li * 0.15);
+      mesh.scale.set(layerScale, layerScale, 1);
+      scene.add(mesh);
+      group.push({ mesh, mat, baseDist: Math.sqrt(p.x*p.x+p.y*p.y+p.z*p.z) });
+    }
+    nebulaeMeshes.push(...group);
+  });
 }
 
 // ─── Black Hole ───────────────────────────────────────────────
@@ -1012,6 +1201,9 @@ function buildBlackHole() {
   blackHoleMesh = new THREE.Mesh(geo, mat);
   blackHoleMesh.renderOrder = 999;
   blackHoleMesh.userData = { id: 'root', type: 'root', label: 'Computer Engineering', level: 0 };
+  blackHoleMesh.position.set(0, 0, 0);
+  blackHoleMesh.matrixAutoUpdate = false;
+  blackHoleMesh.updateMatrix();
   scene.add(blackHoleMesh);
   allNodes.push(blackHoleMesh);
   nodeLookup['root'] = blackHoleMesh;
@@ -1055,7 +1247,7 @@ function buildBlackHole() {
   const haloMat = new THREE.MeshBasicMaterial({
     color: 0xff6600,
     transparent: true,
-    opacity: 0.015,
+    opacity: 0.002,
     side: THREE.BackSide,
     blending: THREE.AdditiveBlending,
     depthWrite: false
@@ -1067,7 +1259,7 @@ function buildBlackHole() {
   const atmoMat = new THREE.MeshBasicMaterial({
     color: 0xff4400,
     transparent: true,
-    opacity: 0.015,
+    opacity: 0.002,
     side: THREE.BackSide,
     blending: THREE.AdditiveBlending,
     depthWrite: false
@@ -1097,17 +1289,25 @@ function makeTrail(color, maxLen = 60) {
   const posArr = new Float32Array(maxLen * 3);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4, vertexColors: false });
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.0, vertexColors: false });
   const line = new THREE.Line(geo, mat);
   line.userData.isTrail = true;
   line.frustumCulled = false;
+  line.visible = false;
   scene.add(line);
   const points = [];
   for (let i = 0; i < maxLen; i++) points.push(new THREE.Vector3());
-  return { line, points, head: 0, maxLen, posArr };
+  return { line, points, head: 0, maxLen, posArr, initialized: false };
 }
 
 function updateTrail(trail, pos) {
+  if (!trail.initialized) {
+    // fill all points with current pos so no lines from origin
+    for (let i = 0; i < trail.maxLen; i++) trail.points[i].copy(pos);
+    trail.initialized = true;
+    trail.line.visible = true;
+    trail.line.material.opacity = 0.35;
+  }
   trail.points[trail.head].copy(pos);
   trail.head = (trail.head + 1) % trail.maxLen;
   const arr = trail.posArr;
@@ -1119,29 +1319,8 @@ function updateTrail(trail, pos) {
 }
 
 // ─── Connection Pulse Lines ────────────────────────────────────
-function makeConnection(fromMesh, toMesh, color = 0x223355) {
-  const pts = [fromMesh.position.clone(), toMesh.position.clone()];
-  const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.0 });
-  const line = new THREE.Line(geo, mat);
-  line.userData.isConnection = true;
-  line.frustumCulled = false;
-  line.visible = false;
-  scene.add(line);
-  connections.push({ line, from: fromMesh, to: toMesh, mat });
-}
-
-function updateConnections() {
-  for (const c of connections) {
-    const pos = c.line.geometry.attributes.position;
-    pos.array[0] = c.from.position.x; pos.array[1] = c.from.position.y; pos.array[2] = c.from.position.z;
-    pos.array[3] = c.to.position.x;   pos.array[4] = c.to.position.y;   pos.array[5] = c.to.position.z;
-    pos.needsUpdate = true;
-    const completed = isCompleted(c.from) && isCompleted(c.to);
-    c.mat.color.setHex(completed ? 0xffd700 : 0x223355);
-    c.mat.opacity = completed ? 0.45 : 0.15;
-  }
-}
+function makeConnection(fromMesh, toMesh, color = 0x223355) { }
+function updateConnections() { }
 
 // ─── Ripple Effect ────────────────────────────────────────────
 function triggerRipple(nodeId) {
@@ -1175,7 +1354,7 @@ function applyCompletionStyle(mesh) {
     if (mat.opacity !== undefined) mat.opacity = 1;
     mat.color && mat.color.setHex(0xffd700);
   } else {
-    const baseColor = getNodeColor(level);
+    const baseColor = (level <= 2 && mesh.userData.starColor !== undefined) ? mesh.userData.starColor : getNodeColor(level);
     mat.color && mat.color.setHex(baseColor);
     if (mat.emissive) {
       mat.emissive.setHex(level <= 2 ? baseColor : 0x000000);
@@ -1209,8 +1388,12 @@ function highlightChildren(mesh) {
 }
 
 // ─── Node Point Light (suns) ──────────────────────────────────
-function addSunLight(mesh, color) {
-  return;
+function addSunLight(mesh, color, level) {
+  const intensity = level === 1 ? CONFIG.sunLightIntensity : CONFIG.sunLightIntensity * 0.7;
+  const distance = level === 1 ? CONFIG.sunLightRange : CONFIG.sunLightRange * 0.5;
+  const light = new THREE.PointLight(color, intensity, distance);
+  mesh.add(light);
+  return light;
 }
 
 // ─── Build Galaxy from JSON ───────────────────────────────────
@@ -1245,7 +1428,7 @@ function buildGalaxy(data) {
     domainSeed++;
 
     // Domain supercluster — large glowing sun
-    const dColor = new THREE.Color().setHSL(di / domainCount, 0.85, 0.55);
+    const dColor = new THREE.Color().setHSL(0.55 + (di / domainCount) * 0.15, 0.9, 0.7 + (di % 3) * 0.08);
     const dColorHex = dColor.getHex();
     const dTex = makeSunTexture(domainSeed * 3, 256);
     const dGeo = makeSphere(CONFIG.sunSizeBase, 48);
@@ -1256,8 +1439,11 @@ function buildGalaxy(data) {
       roughness: 0.55, metalness: 0
     });
     const dMesh = new THREE.Mesh(dGeo, dMat);
+    dMesh.userData._texSeed = domainSeed * 3;
     scene.add(dMesh);
-    registerNode(dMesh, idFor('domain', domain.domain), domain.domain, 'domain', 1, { domain: domain.domain, description: domain.description, references: domain.references });
+    registerNode(dMesh, idFor('domain', domain.domain), domain.domain, 'domain', 1, { domain: domain.domain, description: domain.description, references: domain.references, starColor: dColorHex });
+
+    addFlaresToSun(dMesh, dColor, CONFIG.sunSizeBase);
 
     // Corona glow sprite — additive halo around sun
     const coronaTex = makeStarGlowTexture(
@@ -1265,26 +1451,25 @@ function buildGalaxy(data) {
     );
     const coronaMat = new THREE.SpriteMaterial({
       map: coronaTex, transparent: true,
-      opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false
+      opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false
     });
     const coronaSprite = new THREE.Sprite(coronaMat);
-    const coronaSize = CONFIG.sunSizeBase * 5.5;
+    const coronaSize = CONFIG.sunSizeBase * 0.4;
     coronaSprite.scale.set(coronaSize, coronaSize, 1);
     dMesh.add(coronaSprite);
 
     // Secondary wider softer corona
     const corona2Mat = new THREE.SpriteMaterial({
       map: coronaTex, transparent: true,
-      opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false
+      opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false
     });
     const corona2Sprite = new THREE.Sprite(corona2Mat);
-    const corona2Size = CONFIG.sunSizeBase * 11;
+    const corona2Size = CONFIG.sunSizeBase * 0.8;
     corona2Sprite.scale.set(corona2Size, corona2Size, 1);
     dMesh.add(corona2Sprite);
 
     // Domain point light — actual luminance
-    const dLight = new THREE.PointLight(dColorHex, CONFIG.sunLightIntensity, CONFIG.sunLightRange);
-    dMesh.add(dLight);
+    addSunLight(dMesh, dColorHex, 1);
 
     // Domain orbit
     const dOrbitLine = makeOrbitLine(domainRadius, dIncl, dColorHex, 0.2);
@@ -1312,7 +1497,7 @@ function buildGalaxy(data) {
       const sAngle = (si / Math.max(subjects.length, 1)) * Math.PI * 2;
       const sIncl = (Math.random() - 0.5) * 0.5;
       const sTex = makeSunTexture(domainSeed * 5, 128);
-      const sColor = new THREE.Color().setHSL((di / domainCount + 0.05 * si) % 1, 0.75, 0.62);
+      const sColor = new THREE.Color().setHSL(0.08 + (si / Math.max(subjects.length, 1)) * 0.06, 0.9, 0.62 + (si % 3) * 0.04);
       const sColorHex = sColor.getHex();
       const sGeo = makeSphere(CONFIG.subjectSunSize, 32);
       const sBump = makeBumpTexture(domainSeed * 5, 128);
@@ -1322,10 +1507,13 @@ function buildGalaxy(data) {
         roughness: 0.5
       });
       const sMesh = new THREE.Mesh(sGeo, sMat);
+      sMesh.userData._texSeed = domainSeed * 5;
       scene.add(sMesh);
       registerNode(sMesh, idFor('subj', domain.domain, subj.name), subj.name, 'subject', 2, {
-        domain: domain.domain, difficulty: subj.difficulty, type: subj.type, description: subj.description, references: subj.references
+        domain: domain.domain, difficulty: subj.difficulty, type: subj.type, description: subj.description, references: subj.references, starColor: sColorHex
       });
+
+      addFlaresToSun(sMesh, sColor, CONFIG.subjectSunSize);
 
       // Subject corona glow
       const sCoronaTex = makeStarGlowTexture(
@@ -1333,15 +1521,14 @@ function buildGalaxy(data) {
       );
       const sCoronaMat = new THREE.SpriteMaterial({
         map: sCoronaTex, transparent: true,
-        opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false
+        opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false
       });
       const sCorona = new THREE.Sprite(sCoronaMat);
-      const sCoronaSize = CONFIG.subjectSunSize * 5;
+      const sCoronaSize = CONFIG.subjectSunSize * 0.4;
       sCorona.scale.set(sCoronaSize, sCoronaSize, 1);
       sMesh.add(sCorona);
 
-      const sLight = new THREE.PointLight(sColorHex, CONFIG.sunLightIntensity * 0.6, CONFIG.sunLightRange * 0.5);
-      sMesh.add(sLight);
+      addSunLight(sMesh, sColorHex, 2);
 
       const sOrbitLine = makeOrbitLine(sRadius, sIncl, sColorHex, 0.18);
       dMesh.add(sOrbitLine);
@@ -1377,6 +1564,7 @@ function buildGalaxy(data) {
           emissive: new THREE.Color(0x7ec8e3), emissiveIntensity: 0
         });
         const cMesh = new THREE.Mesh(cGeo, cMat);
+        cMesh.userData._texSeed = domainSeed;
         scene.add(cMesh);
         registerNode(cMesh, idFor('chap', domain.domain, subj.name, chap.chapter), chap.chapter, 'chapter', 3, {
           domain: domain.domain, subject: subj.name, description: chap.description, references: chap.references
@@ -1390,7 +1578,7 @@ function buildGalaxy(data) {
           opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false
         });
         const atmSprite = new THREE.Sprite(atmMat);
-        const atmSize = CONFIG.planetSize * 3.2;
+        const atmSize = CONFIG.planetSize * 1.6;
         atmSprite.scale.set(atmSize, atmSize, 1);
         cMesh.add(atmSprite);
 
@@ -1427,6 +1615,7 @@ function buildGalaxy(data) {
             emissive: new THREE.Color(0x080818), emissiveIntensity: 0.2
           });
           const stMesh = new THREE.Mesh(stGeo, stMat);
+          stMesh.userData._texSeed = domainSeed * 9;
           scene.add(stMesh);
           registerNode(stMesh, idFor('sub', domain.domain, subj.name, chap.chapter, sub.name), sub.name, 'subtopic', 4, {
             domain: domain.domain, subject: subj.name, chapter: chap.chapter,
@@ -1504,6 +1693,7 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
 function onMouseMove(e) {
+  if (window.innerWidth <= 768) return;
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
@@ -1552,13 +1742,15 @@ function onClick(e) {
       openPanel(hitObj);
     }
   } else {
+    STATE.selectedNode = null;
+    STATE._camAnimating = false;
+    clearHighlights();
     const panel = document.getElementById('side-panel');
     if (panel.classList.contains('panel-open')) {
       closeSidePanel();
-    } else {
-      STATE.selectedNode = null;
-      clearHighlights();
     }
+    settingsPanel.classList.remove('settings-open');
+    settingsBtn.classList.remove('active');
   }
 }
 
@@ -2095,7 +2287,7 @@ function animate() {
   for (let li = 0; li < accretionLayers.length; li++) {
     const layer = accretionLayers[li];
     // inner layers spin faster, outer slower
-    const spinSpeed = 0.18 - li * 0.015;
+    const spinSpeed = (0.18 - li * 0.015) * CONFIG.diskSpeed;
     layer.mesh.rotation.z += delta * spinSpeed * speed;
     layer.mesh.material.uniforms.uTime.value = STATE.time;
   }
@@ -2151,6 +2343,15 @@ function animate() {
     rip.mesh.lookAt(camera.position);
   }
 
+  // Animate flare spikes
+  for (const f of flareMeshes) {
+    const pulse = 0.6 + Math.sin(STATE.time * 1.4 + f.pulseOffset) * 0.25 + Math.sin(STATE.time * 2.7 + f.pulseOffset * 1.3) * 0.1;
+    f.sprite.material.opacity = pulse * 0.75;
+    const sz = f.baseSize * (0.9 + Math.sin(STATE.time * 0.8 + f.pulseOffset) * 0.12);
+    f.sprite.scale.set(sz, sz, 1);
+    f.sprite.material.rotation += delta * f.rotSpeed * speed;
+  }
+
   // Animate core light pulse
   if (coreLight) {
     coreLight.intensity = 5 + Math.sin(STATE.time * 1.2) * 2;
@@ -2164,6 +2365,15 @@ function animate() {
     controls.target.add(delta2);
     camera.position.add(delta2);
     STATE._lastSelPos = STATE.selectedNode.position.clone();
+  }
+
+  // nebula fade when camera inside it
+  for (const nb of nebulaeMeshes) {
+    const camDist = camera.position.distanceTo(nb.mesh.position);
+    const nebulaRadius = nb.mesh.scale.x * 0.5;
+    const inside = camDist < nebulaRadius * 0.4;
+    const fadeFactor = inside ? Math.max(0, (camDist / (nebulaRadius * 0.4))) : 1.0;
+    if (nb.mat.uniforms.uOpacity) nb.mat.uniforms.uOpacity.value = fadeFactor * CONFIG.nebulaOpacity;
   }
 
   controls.update();
@@ -2433,6 +2643,37 @@ function toggleTreeView(show) {
 
 initTreeView();
 
+// Settings page navigation
+const settingsPages = document.querySelectorAll('.settings-page');
+const settingsBack = document.getElementById('settings-back');
+const settingsTitleEl = document.getElementById('settings-title');
+let _settingsPageStack = [];
+
+function showSettingsPage(pageId) {
+  settingsPages.forEach(p => p.classList.remove('active'));
+  const target = document.getElementById('settings-page-' + pageId) || document.getElementById('settings-main-menu');
+  if (target) target.classList.add('active');
+  const isMain = !pageId || pageId === 'main';
+  settingsBack.style.display = isMain ? 'none' : 'block';
+  settingsTitleEl.textContent = isMain ? 'Settings' : pageId.charAt(0).toUpperCase() + pageId.slice(1);
+}
+
+document.querySelectorAll('.settings-menu-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const page = item.dataset.page;
+    _settingsPageStack.push(page);
+    showSettingsPage(page);
+  });
+});
+
+settingsBack.addEventListener('click', () => {
+  _settingsPageStack.pop();
+  const prev = _settingsPageStack[_settingsPageStack.length - 1] || null;
+  showSettingsPage(prev);
+});
+
+showSettingsPage(null);
+
 document.getElementById('view-tree-btn').addEventListener('click', () => {
   document.getElementById('view-tree-btn').classList.add('active');
   document.getElementById('view-galaxy-btn').classList.remove('active');
@@ -2445,6 +2686,7 @@ document.getElementById('view-galaxy-btn').addEventListener('click', () => {
 });
 
 canvas.addEventListener('mousemove', onMouseMove);
+canvas.addEventListener('touchmove', e => { if (e.touches.length === 1) onMouseMove(e.touches[0]); }, { passive: true });
 
 let _downPos = null;
 let _downTime = 0;
@@ -2464,6 +2706,8 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 canvas.addEventListener('pointerup', e => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   const elapsed = performance.now() - _downTime;
   if (!_wasDrag && elapsed < 600) onClick(e);
   _downPos = null;
@@ -2477,27 +2721,13 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight);
   bloomPass.setSize(window.innerWidth, window.innerHeight);
   depthRenderTarget.setSize(window.innerWidth, window.innerHeight);
+  if (fxaaPass.uniforms && fxaaPass.uniforms.resolution) {
+    fxaaPass.uniforms.resolution.value.set(1/window.innerWidth, 1/window.innerHeight);
+  }
 });
 
 // ─── Load JSON & Start ────────────────────────────────────────
 async function init() {
-  const legendEl = document.getElementById('legend');
-  if (legendEl) {
-    const help = document.createElement('div');
-    help.style.fontSize = '11px';
-    help.style.opacity = '0.8';
-    help.style.marginBottom = '8px';
-    help.style.maxWidth = '220px';
-    help.innerHTML = 'Click an object to open its panel and highlight its direct children. Click a checkbox to mark complete; click the item text to navigate to it. Hover near objects to see tooltips.';
-    help.style.position = 'fixed';
-    help.style.left = '20px';
-    help.style.bottom = '230px';
-    help.style.background = 'rgba(0,0,0,0.6)';
-    help.style.padding = '8px 10px';
-    help.style.borderRadius = '6px';
-    help.style.zIndex = '50';
-    document.body.appendChild(help);
-  }
   const loadingText = document.getElementById('loading-text');
   loadingText.textContent = 'Loading theory.json…';
   loadProgress();
@@ -2523,6 +2753,9 @@ async function init() {
   loadingText.textContent = 'Building galaxy…';
   await new Promise(r => setTimeout(r, 100));
   buildGalaxy(data);
+
+  // load settings after galaxy exists so applySetting has meshes to work with
+  await loadSettings();
 
   loadingText.textContent = 'Igniting stars…';
   await new Promise(r => setTimeout(r, 200));
@@ -2673,3 +2906,613 @@ function getDemoData() {
 }
 
 init();
+
+// ─── Settings Default Schema ───────────────────────────────────
+const SETTINGS_DEFAULTS = {
+  bloomStrength: CONFIG.bloomStrength,
+  bloomRadius: CONFIG.bloomRadius,
+  bloomThreshold: CONFIG.bloomThreshold,
+  motionBlur: CONFIG.motionBlur,
+  fxaa: 0,
+  pixelRatio: Math.min(window.devicePixelRatio, 2),
+  fogDensity: CONFIG.fogDensity,
+  toneExposure: 1.1,
+  sunSizeBase: CONFIG.sunSizeBase,
+  domainCoronaSize: CONFIG.domainCoronaSize,
+  subjectSunSize: CONFIG.subjectSunSize,
+  subjectCoronaSize: CONFIG.subjectCoronaSize,
+  sunEmissiveIntensity: CONFIG.sunEmissiveIntensity,
+  sunLightRange: CONFIG.sunLightRange,
+  planetSize: CONFIG.planetSize,
+  atmosphereOpacity: CONFIG.atmosphereOpacity,
+  moonSize: CONFIG.moonSize,
+  asteroidSize: CONFIG.asteroidSize,
+  domainRadiusBase: CONFIG.domainRadiusBase,
+  domainRadiusStepUser: CONFIG.domainRadiusStepUser,
+  subjectRadiusBase: CONFIG.subjectRadiusBase,
+  subjectRadiusStepUser: CONFIG.subjectRadiusStepUser,
+  chapterRadiusBase: CONFIG.chapterRadiusBase,
+  chapterRadiusStepUser: CONFIG.chapterRadiusStepUser,
+  subtopicRadiusBase: CONFIG.subtopicRadiusBase,
+  subtopicRadiusStepUser: CONFIG.subtopicRadiusStepUser,
+  bhCoreRadius: CONFIG.bhCoreRadius,
+  bhLensStrength: CONFIG.bhLensStrength,
+  bhDiskInner: CONFIG.bhDiskInner,
+  bhDiskOuter: CONFIG.bhDiskOuter,
+  diskOpacity: CONFIG.diskOpacity,
+  diskSpeed: CONFIG.diskSpeed,
+  diskColorTemp: CONFIG.diskColorTemp,
+  diskVolumeLayers: CONFIG.diskVolumeLayers,
+  nebulaOpacity: CONFIG.nebulaOpacity,
+  nebulaSaturation: CONFIG.nebulaSaturation,
+  nebulaBrightness: CONFIG.nebulaBrightness,
+  starBrightness: CONFIG.starBrightness,
+  starSize: CONFIG.starSize,
+  galaxyCount: CONFIG.galaxyCount,
+  galaxySize: CONFIG.galaxySize,
+  // texture
+  'tex.domainOctaves': CONFIG.tex.domainOctaves,
+  'tex.domainFreq': CONFIG.tex.domainFreq,
+  'tex.domainGranulation': CONFIG.tex.domainGranulation,
+  'tex.domainSpotCount': CONFIG.tex.domainSpotCount,
+  'tex.domainSpotSize': CONFIG.tex.domainSpotSize,
+  'tex.subjectOctaves': CONFIG.tex.subjectOctaves,
+  'tex.subjectFreq': CONFIG.tex.subjectFreq,
+  'tex.subjectGranulation': CONFIG.tex.subjectGranulation,
+  'tex.planetContinent': CONFIG.tex.planetContinent,
+  'tex.planetDetail': CONFIG.tex.planetDetail,
+  'tex.planetCloud': CONFIG.tex.planetCloud,
+  'tex.planetBump': CONFIG.tex.planetBump,
+  'tex.moonCraters': CONFIG.tex.moonCraters,
+  'tex.moonCraterSize': CONFIG.tex.moonCraterSize,
+  'tex.moonRoughness': CONFIG.tex.moonRoughness,
+  'tex.asteroidBump': CONFIG.tex.asteroidBump,
+  'tex.asteroidRoughness': CONFIG.tex.asteroidRoughness,
+  'tex.diskTurb': CONFIG.tex.diskTurb,
+  'tex.diskFilament': CONFIG.tex.diskFilament,
+  'tex.diskInnerGlow': CONFIG.tex.diskInnerGlow,
+};
+
+let currentSettings = { ...SETTINGS_DEFAULTS };
+
+// ─── Save/Load Settings ───────────────────────────────────────
+let _settingsPath = null;
+async function saveSettings() {
+  try {
+    if (!_settingsPath) _settingsPath = await window.__TAURI__.core.invoke('settings_json_path');
+    await writeTextFile(_settingsPath, JSON.stringify(currentSettings, null, 2));
+  } catch (e) { console.warn('settings save failed', e); }
+}
+
+async function loadSettings() {
+  try {
+    const path = await window.__TAURI__.core.invoke('settings_json_path');
+    const text = await readTextFile(path);
+    const saved = JSON.parse(text);
+    if (saved && Object.keys(saved).length > 0) {
+      Object.assign(currentSettings, saved);
+      const skipOnLoad = new Set(['domainRadiusBase','subjectRadiusBase','chapterRadiusBase','subtopicRadiusBase','sunSizeBase','subjectSunSize','planetSize','moonSize','asteroidSize','bhCoreRadius','diskVolumeLayers']);
+      Object.entries(currentSettings).forEach(([k, v]) => {
+        if (!skipOnLoad.has(k)) applySetting(k, v);
+      });
+    } else {
+      // blank file — write defaults now
+      await writeTextFile(path, JSON.stringify(currentSettings, null, 2));
+    }
+  } catch (e) {
+    // file missing — write defaults
+    try {
+      const path = await window.__TAURI__.core.invoke('settings_json_path');
+      await writeTextFile(path, JSON.stringify(currentSettings, null, 2));
+    } catch (_) {}
+  }
+}
+
+// ─── Apply Setting Live ───────────────────────────────────────
+function applySetting(key, value) {
+  currentSettings[key] = value;
+
+  // texture keys
+  if (key.startsWith('tex.')) {
+    const texKey = key.slice(4);
+    CONFIG.tex[texKey] = value;
+    return;
+  }
+
+  switch(key) {
+    case 'bloomStrength':
+      CONFIG.bloomStrength = value;
+      bloomPass.strength = value;
+      break;
+    case 'bloomRadius':
+      CONFIG.bloomRadius = value;
+      bloomPass.radius = value;
+      break;
+    case 'bloomThreshold':
+      CONFIG.bloomThreshold = value;
+      bloomPass.threshold = value;
+      break;
+    case 'fxaa':
+      CONFIG.fxaa = value;
+      fxaaPass.enabled = value > 0;
+      break;
+    case 'pixelRatio':
+      CONFIG.pixelRatio = value;
+      renderer.setPixelRatio(value);
+      break;
+    case 'motionBlur':
+      CONFIG.motionBlur = value;
+      afterimagePass.uniforms.damp.value = value;
+      break;
+    case 'fogDensity':
+      CONFIG.fogDensity = value;
+      scene.fog.density = value;
+      break;
+    case 'toneExposure':
+      renderer.toneMappingExposure = value;
+      break;
+    case 'sunEmissiveIntensity':
+      CONFIG.sunEmissiveIntensity = value;
+      allNodes.forEach(n => {
+        if ((n.userData.level === 1 || n.userData.level === 2) && n.material && n.material.emissive) {
+          n.material.emissiveIntensity = n.userData.level === 1 ? value : value * 0.8;
+        }
+      });
+      break;
+    case 'sunLightRange':
+      CONFIG.sunLightRange = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 1 || n.userData.level === 2) {
+          n.children.forEach(c => { if (c.isLight) c.distance = n.userData.level === 1 ? value : value * 0.5; });
+        }
+      });
+      break;
+    case 'bhLensStrength':
+      CONFIG.bhLensStrength = value;
+      lensPass.uniforms.bhStrength.value = value;
+      break;
+    case 'bhCoreRadius':
+      CONFIG.bhCoreRadius = value;
+      if (blackHoleMesh) {
+        blackHoleMesh.geometry.dispose();
+        blackHoleMesh.geometry = new THREE.SphereGeometry(value, 64, 64);
+      }
+      break;
+    case 'diskOpacity':
+      CONFIG.diskOpacity = value;
+      accretionLayers.forEach(l => {
+        if (l.mesh.material.uniforms && l.mesh.material.uniforms.uOpacityMult) {
+          l.mesh.material.uniforms.uOpacityMult.value = value / 0.08;
+        }
+      });
+      break;
+    case 'diskSpeed':
+      CONFIG.diskSpeed = value;
+      break;
+    case 'diskColorTemp':
+      CONFIG.diskColorTemp = value;
+      accretionLayers.forEach(l => {
+        if (l.mesh.material.uniforms && l.mesh.material.uniforms.uColorTemp)
+          l.mesh.material.uniforms.uColorTemp.value = value;
+      });
+      break;
+    case 'diskVolumeLayers':
+      CONFIG.diskVolumeLayers = value;
+      accretionLayers.forEach((l, i) => { l.mesh.visible = i < value; });
+      break;
+    case 'nebulaOpacity':
+      CONFIG.nebulaOpacity = value;
+      break;
+    case 'nebulaSaturation':
+      CONFIG.nebulaSaturation = value;
+      nebulaeMeshes.forEach(nb => {
+        if (nb.mat.uniforms && nb.mat.uniforms.uSaturation) nb.mat.uniforms.uSaturation.value = value;
+      });
+      break;
+    case 'nebulaBrightness':
+      CONFIG.nebulaBrightness = value;
+      nebulaeMeshes.forEach(nb => {
+        if (nb.mat.uniforms && nb.mat.uniforms.uBrightness) nb.mat.uniforms.uBrightness.value = value;
+      });
+      break;
+    case 'starBrightness':
+      CONFIG.starBrightness = value;
+      scene.traverse(obj => { if (obj.isPoints && obj.material) obj.material.opacity = value; });
+      break;
+    case 'starSize':
+      CONFIG.starSize = value;
+      scene.traverse(obj => { if (obj.isPoints && obj.material) obj.material.size = value; });
+      break;
+    case 'sunSizeBase':
+      CONFIG.sunSizeBase = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 1 && n.geometry) { n.geometry.dispose(); n.geometry = new THREE.SphereGeometry(value, 48, 48); }
+      });
+      break;
+    case 'domainCoronaSize':
+      CONFIG.domainCoronaSize = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 1) {
+          n.children.forEach(c => { if (c.isSprite) { c.scale.set(CONFIG.sunSizeBase * value, CONFIG.sunSizeBase * value, 1); } });
+        }
+      });
+      break;
+    case 'subjectSunSize':
+      CONFIG.subjectSunSize = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 2 && n.geometry) { n.geometry.dispose(); n.geometry = new THREE.SphereGeometry(value, 32, 32); }
+      });
+      break;
+    case 'subjectCoronaSize':
+      CONFIG.subjectCoronaSize = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 2) {
+          n.children.forEach(c => { if (c.isSprite) { c.scale.set(CONFIG.subjectSunSize * value, CONFIG.subjectSunSize * value, 1); } });
+        }
+      });
+      break;
+    case 'planetSize':
+      CONFIG.planetSize = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 3 && n.geometry) { n.geometry.dispose(); n.geometry = new THREE.SphereGeometry(value, 32, 32); }
+      });
+      break;
+    case 'atmosphereOpacity':
+      CONFIG.atmosphereOpacity = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 3) {
+          n.children.forEach(c => { if (c.isSprite && c.material) c.material.opacity = value; });
+        }
+      });
+      break;
+    case 'moonSize':
+      CONFIG.moonSize = value;
+      allNodes.forEach(n => {
+        if (n.userData.level === 4 && n.geometry) { n.geometry.dispose(); n.geometry = new THREE.SphereGeometry(value, 20, 20); }
+      });
+      break;
+    case 'asteroidSize':
+      CONFIG.asteroidSize = value;
+      if (conceptInstancedMesh) { conceptInstancedMesh.geometry.dispose(); conceptInstancedMesh.geometry = new THREE.IcosahedronGeometry(value, 0); }
+      break;
+    case 'domainRadiusBase':
+      CONFIG.domainRadiusBase = value;
+      orbits.filter(o => o.parentMesh === blackHoleMesh).forEach((o, i) => {
+        o.radius = value + i * CONFIG.domainRadiusStepUser;
+        if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+      });
+      break;
+    case 'domainRadiusStepUser':
+      CONFIG.domainRadiusStepUser = value;
+      orbits.filter(o => o.parentMesh === blackHoleMesh).forEach((o, i) => {
+        o.radius = CONFIG.domainRadiusBase + i * value;
+        if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+      });
+      break;
+    case 'subjectRadiusBase':
+      CONFIG.subjectRadiusBase = value;
+      allNodes.filter(n => n.userData.level === 1).forEach(parent => {
+        orbits.filter(o => o.parentMesh === parent).forEach((o, i) => {
+          o.radius = value + i * CONFIG.subjectRadiusStepUser;
+          if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+        });
+      });
+      break;
+    case 'subjectRadiusStepUser':
+      CONFIG.subjectRadiusStepUser = value;
+      allNodes.filter(n => n.userData.level === 1).forEach(parent => {
+        orbits.filter(o => o.parentMesh === parent).forEach((o, i) => {
+          o.radius = CONFIG.subjectRadiusBase + i * value;
+          if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+        });
+      });
+      break;
+    case 'chapterRadiusBase':
+      CONFIG.chapterRadiusBase = value;
+      allNodes.filter(n => n.userData.level === 2).forEach(parent => {
+        orbits.filter(o => o.parentMesh === parent).forEach((o, i) => {
+          o.radius = value + i * CONFIG.chapterRadiusStepUser;
+          if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+        });
+      });
+      break;
+    case 'chapterRadiusStepUser':
+      CONFIG.chapterRadiusStepUser = value;
+      allNodes.filter(n => n.userData.level === 2).forEach(parent => {
+        orbits.filter(o => o.parentMesh === parent).forEach((o, i) => {
+          o.radius = CONFIG.chapterRadiusBase + i * value;
+          if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+        });
+      });
+      break;
+    case 'subtopicRadiusBase':
+      CONFIG.subtopicRadiusBase = value;
+      allNodes.filter(n => n.userData.level === 3).forEach(parent => {
+        orbits.filter(o => o.parentMesh === parent).forEach((o, i) => {
+          o.radius = value + i * CONFIG.subtopicRadiusStepUser;
+          if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+        });
+      });
+      break;
+    case 'subtopicRadiusStepUser':
+      CONFIG.subtopicRadiusStepUser = value;
+      allNodes.filter(n => n.userData.level === 3).forEach(parent => {
+        orbits.filter(o => o.parentMesh === parent).forEach((o, i) => {
+          o.radius = CONFIG.subtopicRadiusBase + i * value;
+          if (o.orbitLine) { o.orbitLine.geometry.dispose(); o.orbitLine.geometry = makeOrbitLine(o.radius, o.inclination).geometry; }
+        });
+      });
+      break;
+    case 'bhDiskInner':
+      CONFIG.bhDiskInner = value;
+      accretionLayers.forEach(l => { if (l.mesh.material.uniforms && l.mesh.material.uniforms.uInner) l.mesh.material.uniforms.uInner.value = value; });
+      break;
+    case 'bhDiskOuter':
+      CONFIG.bhDiskOuter = value;
+      accretionLayers.forEach(l => { if (l.mesh.material.uniforms && l.mesh.material.uniforms.uOuter) l.mesh.material.uniforms.uOuter.value = value; });
+      break;
+  }
+
+  saveSettings();
+}
+
+// ─── Settings Note ────────────────────────────────────────────
+let _noteTimeout = null;
+function showSettingsNote(msg) {
+  let note = document.getElementById('settings-note');
+  if (!note) {
+    note = document.createElement('div');
+    note.id = 'settings-note';
+    note.style.cssText = 'font-size:0.7rem;color:#ffaa44;margin-top:4px;padding:4px 8px;background:rgba(255,160,0,0.08);border-radius:4px;border:1px solid rgba(255,160,0,0.2);';
+    document.getElementById('settings-body').prepend(note);
+  }
+  note.textContent = msg;
+  clearTimeout(_noteTimeout);
+  _noteTimeout = setTimeout(() => { if (note) note.textContent = ''; }, 3000);
+}
+
+// ─── Init Settings Sliders ────────────────────────────────────
+function initSettingsSliders() {
+  // graphics sliders
+  document.querySelectorAll('#settings-body input[type="range"]').forEach(slider => {
+    const key = slider.dataset.setting;
+    if (!key) return;
+    const val = currentSettings[key] ?? SETTINGS_DEFAULTS[key];
+    if (val !== undefined) slider.value = val;
+    const valEl = document.getElementById('val-' + key);
+    if (valEl) valEl.textContent = Number(val).toFixed(3).replace(/\.?0+$/, '');
+    slider.addEventListener('input', () => {
+      const newVal = parseFloat(slider.value);
+      if (valEl) valEl.textContent = Number(newVal).toFixed(3).replace(/\.?0+$/, '');
+      applySetting(key, newVal);
+    });
+  });
+
+  // texture sliders
+  document.querySelectorAll('#texture-body input[type="range"]').forEach(slider => {
+    const texKey = slider.dataset.tex;
+    if (!texKey) return;
+    const fullKey = 'tex.' + texKey;
+    const val = currentSettings[fullKey] ?? CONFIG.tex[texKey];
+    if (val !== undefined) slider.value = val;
+    const valEl = document.getElementById('val-tex-' + texKey);
+    if (valEl) valEl.textContent = Number(val).toFixed(3).replace(/\.?0+$/, '');
+    slider.addEventListener('input', () => {
+      const newVal = parseFloat(slider.value);
+      if (valEl) valEl.textContent = Number(newVal).toFixed(3).replace(/\.?0+$/, '');
+      CONFIG.tex[texKey] = newVal;
+      currentSettings[fullKey] = newVal;
+      saveSettings();
+    });
+  });
+}
+
+// ─── Settings Panel Toggle ────────────────────────────────────
+const settingsPanel = document.getElementById('settings-panel');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsClose = document.getElementById('settings-close');
+
+settingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = settingsPanel.classList.contains('settings-open');
+  if (isOpen) {
+    settingsPanel.classList.remove('settings-open');
+    settingsBtn.classList.remove('active');
+  } else {
+    settingsPanel.classList.add('settings-open');
+    settingsBtn.classList.add('active');
+  }
+});
+
+settingsClose.addEventListener('click', (e) => {
+  e.stopPropagation();
+  settingsPanel.classList.remove('settings-open');
+  settingsBtn.classList.remove('active');
+});
+
+document.getElementById('settings-reset').addEventListener('click', () => {
+  const activePreset = currentSettings._activePreset;
+  const base = activePreset && PRESETS[activePreset] ? PRESETS[activePreset] : SETTINGS_DEFAULTS;
+  currentSettings = { ...SETTINGS_DEFAULTS, ...base, _activePreset: activePreset || null };
+  const skipOnReset = new Set(['domainRadiusBase','subjectRadiusBase','chapterRadiusBase','subtopicRadiusBase','sunSizeBase','subjectSunSize','planetSize','moonSize','asteroidSize','bhCoreRadius','diskVolumeLayers']);
+  Object.entries(currentSettings).forEach(([k, v]) => {
+    if (k !== '_activePreset' && !skipOnReset.has(k)) applySetting(k, v);
+  });
+  initSettingsSliders();
+  saveSettings();
+});
+
+// ─── Legend & Controls Logic ──────────────────────────────────
+const legendEl = document.getElementById('legend');
+const legendPill = document.getElementById('legend-pill');
+const controlsOverlay = document.getElementById('controls-overlay');
+
+let legendAutoCollapseTimer = null;
+
+function expandLegend() {
+  legendEl.classList.add('visible');
+  legendPill.classList.remove('visible');
+  clearTimeout(legendAutoCollapseTimer);
+  legendAutoCollapseTimer = setTimeout(() => collapseLegend(), 3000);
+}
+
+function collapseLegend() {
+  legendEl.classList.remove('visible');
+  legendPill.classList.add('visible');
+}
+
+legendPill.addEventListener('click', () => expandLegend());
+
+// on load: show both for 3s, then hide controls, collapse legend to pill
+async function initSettingsAndUI() {
+  initSettingsSliders();
+
+  // show legend + controls
+  legendEl.classList.add('visible');
+  controlsOverlay.style.opacity = '1';
+  controlsOverlay.style.display = 'block';
+
+  setTimeout(() => {
+    controlsOverlay.style.transition = 'opacity 0.6s ease';
+    controlsOverlay.style.opacity = '0';
+    setTimeout(() => { controlsOverlay.style.display = 'none'; }, 600);
+    collapseLegend();
+  }, 3000);
+}
+
+// ─── Graphics Presets ─────────────────────────────────────────
+const PRESETS = {
+  lowest: {
+    bloomStrength: 0.0, bloomRadius: 0.4, bloomThreshold: 1.0,
+    fxaa: 0, pixelRatio: 0.75,
+    motionBlur: 0.0, fogDensity: 0.0, toneExposure: 0.9,
+    sunSizeBase: 5, domainCoronaSize: 0, subjectSunSize: 3, subjectCoronaSize: 0,
+    sunEmissiveIntensity: 0.5, sunLightRange: 80,
+    planetSize: 2.0, atmosphereOpacity: 0.0,
+    moonSize: 0.6, asteroidSize: 0.22,
+    domainRadiusBase: 200, subjectRadiusBase: 34, chapterRadiusBase: 14, subtopicRadiusBase: 7,
+    bhCoreRadius: 19, bhLensStrength: 0.0, bhDiskInner: 26, bhDiskOuter: 200,
+    diskOpacity: 0.03, diskSpeed: 0.3, diskColorTemp: 0.5, diskVolumeLayers: 1,
+    nebulaOpacity: 0.0, nebulaSaturation: 0.0, nebulaBrightness: 0.0,
+    starBrightness: 0.5, starSize: 0.8, galaxyCount: 0, galaxySize: 300,
+  },
+  low: {
+    bloomStrength: 0.03, bloomRadius: 0.5, bloomThreshold: 0.98,
+    fxaa: 0, pixelRatio: 1.0,
+    motionBlur: 0.0, fogDensity: 0.00002, toneExposure: 1.0,
+    sunSizeBase: 7, domainCoronaSize: 2.5, subjectSunSize: 4, subjectCoronaSize: 2,
+    sunEmissiveIntensity: 1.0, sunLightRange: 150,
+    planetSize: 2.4, atmosphereOpacity: 0.06,
+    moonSize: 0.85, asteroidSize: 0.28,
+    domainRadiusBase: 200, subjectRadiusBase: 34, chapterRadiusBase: 14, subtopicRadiusBase: 7,
+    bhCoreRadius: 19, bhLensStrength: 0.015, bhDiskInner: 26, bhDiskOuter: 200,
+    diskOpacity: 0.05, diskSpeed: 0.6, diskColorTemp: 0.5, diskVolumeLayers: 2,
+    nebulaOpacity: 0.015, nebulaSaturation: 0.5, nebulaBrightness: 0.6,
+    starBrightness: 0.7, starSize: 1.2, galaxyCount: 15, galaxySize: 320,
+  },
+  medium: {
+    bloomStrength: 0.05, bloomRadius: 0.55, bloomThreshold: 0.96,
+    fxaa: 1, pixelRatio: 1.0,
+    motionBlur: 0.25, fogDensity: 0.00005, toneExposure: 1.05,
+    sunSizeBase: 9, domainCoronaSize: 4.5, subjectSunSize: 5, subjectCoronaSize: 3.5,
+    sunEmissiveIntensity: 0.15, sunLightRange: 280,
+    planetSize: 3.2, atmosphereOpacity: 0.16,
+    moonSize: 1.1, asteroidSize: 0.38,
+    domainRadiusBase: 200, subjectRadiusBase: 34, chapterRadiusBase: 14, subtopicRadiusBase: 7,
+    bhCoreRadius: 19, bhLensStrength: 0.03, bhDiskInner: 26, bhDiskOuter: 200,
+    diskOpacity: 0.08, diskSpeed: 1.0, diskColorTemp: 0.5, diskVolumeLayers: 4,
+    nebulaOpacity: 0.01, nebulaSaturation: 1.0, nebulaBrightness: 1.0,
+    starBrightness: 0.9, starSize: 1.6, galaxyCount: 35, galaxySize: 400,
+  },
+  high: {
+    bloomStrength: 0.08, bloomRadius: 0.6, bloomThreshold: 0.94,
+    fxaa: 1, pixelRatio: Math.min(window.devicePixelRatio, 1.5),
+    motionBlur: 0.45, fogDensity: 0.00008, toneExposure: 1.1,
+    sunSizeBase: 11, domainCoronaSize: 6, subjectSunSize: 6, subjectCoronaSize: 5,
+    sunEmissiveIntensity: 2.2, sunLightRange: 380,
+    planetSize: 3.8, atmosphereOpacity: 0.24,
+    moonSize: 1.3, asteroidSize: 0.44,
+    domainRadiusBase: 200, subjectRadiusBase: 34, chapterRadiusBase: 14, subtopicRadiusBase: 7,
+    bhCoreRadius: 19, bhLensStrength: 0.045, bhDiskInner: 26, bhDiskOuter: 200,
+    diskOpacity: 0.11, diskSpeed: 1.3, diskColorTemp: 0.5, diskVolumeLayers: 6,
+    nebulaOpacity: 0.05, nebulaSaturation: 1.4, nebulaBrightness: 1.5,
+    starBrightness: 1.1, starSize: 2.0, galaxyCount: 55, galaxySize: 450,
+  },
+  ultra: {
+    bloomStrength: 0.1, bloomRadius: 0.65, bloomThreshold: 0.92,
+    fxaa: 1, pixelRatio: Math.min(window.devicePixelRatio, 2),
+    motionBlur: 0.6, fogDensity: 0.00011, toneExposure: 1.18,
+    sunSizeBase: 13, domainCoronaSize: 8, subjectSunSize: 7, subjectCoronaSize: 6,
+    sunEmissiveIntensity: 3.0, sunLightRange: 500,
+    planetSize: 4.8, atmosphereOpacity: 0.32,
+    moonSize: 1.7, asteroidSize: 0.52,
+    domainRadiusBase: 200, subjectRadiusBase: 34, chapterRadiusBase: 14, subtopicRadiusBase: 7,
+    bhCoreRadius: 19, bhLensStrength: 0.055, bhDiskInner: 26, bhDiskOuter: 200,
+    diskOpacity: 0.14, diskSpeed: 1.6, diskColorTemp: 0.5, diskVolumeLayers: 7,
+    nebulaOpacity: 0.07, nebulaSaturation: 1.8, nebulaBrightness: 2.2,
+    starBrightness: 1.4, starSize: 2.4, galaxyCount: 80, galaxySize: 550,
+  },
+};
+
+function applyPreset(name) {
+  const preset = PRESETS[name];
+  if (!preset) return;
+  Object.entries(preset).forEach(([k, v]) => applySetting(k, v));
+  currentSettings = { ...currentSettings, ...preset };
+  initSettingsSliders();
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === name);
+  });
+  currentSettings._activePreset = name;
+  saveSettings();
+}
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+});
+
+// texture regenerate
+function applyAllSettingsNow() {
+  Object.entries(currentSettings).forEach(([k, v]) => {
+    if (k !== '_activePreset') applySetting(k, v);
+  });
+}
+
+document.getElementById('texture-regenerate').addEventListener('click', () => {
+  allNodes.forEach(n => {
+    const lvl = n.userData.level;
+    const seed = n.userData._texSeed;
+    if (!n.material || seed === undefined) return;
+    if (lvl === 1) { const t = makeSunTexture(seed, 256); if (n.material.map) { n.material.map.dispose(); n.material.map = t; n.material.needsUpdate = true; } }
+    if (lvl === 2) { const t = makeSunTexture(seed, 128); if (n.material.map) { n.material.map.dispose(); n.material.map = t; n.material.needsUpdate = true; } }
+    if (lvl === 3) { const t = makePlanetTexture(seed, 256); if (n.material.map) { n.material.map.dispose(); n.material.map = t; n.material.needsUpdate = true; } }
+    if (lvl === 4) { const t = makeMoonTexture(seed, 128); if (n.material.map) { n.material.map.dispose(); n.material.map = t; n.material.needsUpdate = true; } }
+  });
+  accretionLayers.forEach(l => {
+    if (l.mesh.material.uniforms) {
+      l.mesh.material.uniforms.uTurbScale.value = CONFIG.tex.diskTurb;
+      l.mesh.material.uniforms.uFilament.value = CONFIG.tex.diskFilament;
+      l.mesh.material.uniforms.uInnerGlow.value = CONFIG.tex.diskInnerGlow;
+    }
+  });
+  applyAllSettingsNow();
+});
+
+// background rebuild
+document.getElementById('background-rebuild').addEventListener('click', () => {
+  // remove old starfield, nebulae, galaxies
+  const toRemove = [];
+  scene.traverse(obj => {
+    if (obj.isPoints || (obj.isSprite && obj.userData.isBackground) || (obj.isMesh && obj.userData.isBackground)) toRemove.push(obj);
+  });
+  toRemove.forEach(obj => { scene.remove(obj); if (obj.geometry) obj.geometry.dispose(); if (obj.material) obj.material.dispose(); });
+  nebulaeMeshes.length = 0;
+  buildStarfield();
+  buildNebulae();
+  buildDistantGalaxies();
+  buildBrightStars();
+  buildSupernovae();
+  applyAllSettingsNow();
+});
+
+initSettingsAndUI();
